@@ -1,0 +1,30 @@
+spring:
+  security:
+    user:
+      name: admin
+      password: admin123
+    config:
+      matcher:
+        public: /public/**
+        protected: /admin/**
+
+server:
+  servlet:
+    context-path: "/api"
+
+
+
+
+logging:
+  level:
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+
+
+springdoc:
+  api-docs:
+    enabled: true
+    path: /api-docs
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
