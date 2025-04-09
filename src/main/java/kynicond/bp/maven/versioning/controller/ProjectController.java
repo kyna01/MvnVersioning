@@ -57,13 +57,19 @@ public class ProjectController {
 
     @Operation(summary = "Aktualizuje verzi konkrétní dependency v modulu")
     @PostMapping("/update-dependency-version")
-    public ResponseEntity<Void> updateDependencyRequest(@RequestBody UpdateDependencyRequest updateDependencyRequest){
+    public ResponseEntity<?> updateDependencyRequest(@RequestBody UpdateDependencyRequest updateDependencyRequest){
         try {
-            projectService.updateDependencyVersion(updateDependencyRequest);
-            return ResponseEntity.ok().build();
+            List<String> conflicts = projectService.updateDependencyVersion(updateDependencyRequest);
+            System.out.println(" ");
+            System.out.println(conflicts);
+            if (conflicts.isEmpty()){
+                return ResponseEntity.ok().build();
+            }
+            else return ResponseEntity.badRequest().body(conflicts);
+
         }catch (Exception e){
             e.printStackTrace();
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
 
@@ -85,7 +91,7 @@ public class ProjectController {
     @GetMapping("/check-dependency-conflicts")
     public ResponseEntity<List<String>> checkConflicts() {
         try {
-            List<String> conflicts = projectService.checkDependencyConflicts();
+            List<String> conflicts = projectService.checkAllModulesConflicts();
             return ResponseEntity.ok(conflicts);
         } catch (Exception e) {
             e.printStackTrace();
