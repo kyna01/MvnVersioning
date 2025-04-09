@@ -17,7 +17,12 @@ import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -214,26 +219,15 @@ public class ProjectService {
             throw new RuntimeException("Maven příkaz selhal." + result.getExecutionException());
         }
 
-        //test kvůli konfliktům
 
-        InvocationRequest testRequest = new DefaultInvocationRequest();
-        testRequest.setPomFile(modulePomFile);
-        testRequest.setGoals(List.of("test"));
-        InvocationResult testResult = invoker.execute(testRequest);
-        if (testResult.getExitCode() != 0) {
-            throw new RuntimeException("Build selhal po změně verze – pravděpodobně nekompatibilita závislostí.");
+
+
+
+        List<String> versionConflictWarnings = detectGlobalConflicts(request);
+
+        if (!versionConflictWarnings.isEmpty()) {
+            throw new RuntimeException("Nekompatibilní verze:\n" + String.join("\n", versionConflictWarnings));
         }
-
-
-        List<String> conflicts = checkDependencyConflicts();
-        if (!conflicts.isEmpty()) {
-            throw new RuntimeException("Detekovány konflikty verzí závislostí: " + conflicts);
-        }
-
-
-
-
-        List<String> versionConflictWarnings = detectOverriddenTransitiveConflicts(request, modulePomFile.getAbsolutePath());
 
         return versionConflictWarnings;
 
@@ -261,139 +255,268 @@ public class ProjectService {
 
 
 
-    public List<String> checkDependencyConflicts() throws Exception {
-        String pomPath = getProjectPomPath();
-        if (pomPath == null) {
-            throw new FileNotFoundException("Projekt není načten.");
+//    public List<String> checkDependencyConflicts() throws Exception {
+//        String pomPath = getProjectPomPath();
+//        if (pomPath == null) {
+//            throw new FileNotFoundException("Projekt není načten.");
+//        }
+//
+//        File pomFile = new File(pomPath);
+//        File parentDir = pomFile.getParentFile();
+//        File outputFile = new File(parentDir, "deps.txt");
+//
+//        InvocationRequest request = new DefaultInvocationRequest();
+//        request.setPomFile(pomFile);
+//        request.setGoals(List.of(
+//                "validate",
+//                "dependency:tree",
+//                "-DoutputFile=" + outputFile.getAbsolutePath(),
+//                "-DoutputType=text"
+//        ));
+//
+//        StringBuilder outputLog = new StringBuilder();
+//        Invoker invoker = new DefaultInvoker();
+//        invoker.setMavenHome(new File("/usr/local/Cellar/maven/3.9.6/libexec"));
+//        invoker.setOutputHandler(outputLog::append);
+//        invoker.setErrorHandler(outputLog::append);
+//
+//        InvocationResult result = invoker.execute(request);
+//        if (result.getExitCode() != 0) {
+//            throw new RuntimeException("Nepodařilo se získat strom závislostí.");
+//        }
+//
+//        List<String> conflicts = new ArrayList<>();
+//        List<String> treeLines = List.of(outputLog.toString().split("\n"));
+//
+//        for (String line : treeLines) {
+//            if (line.contains("must be unique") || line.contains("conflict") || line.contains("multiple versions")) {
+//                conflicts.add("Konflikt: " + line.trim());
+//            }
+//        }
+//
+//        Map<String, String> expectedTransitives = new HashMap<>();
+//        for (String line : treeLines) {
+//            if (line.contains("->") && line.contains(":jar:")) {
+//                String[] parts = line.trim().split("->");
+//                if (parts.length == 2) {
+//                    String[] artifactParts = parts[1].trim().split(":");
+//                    if (artifactParts.length >= 4) {
+//                        String key = artifactParts[0] + ":" + artifactParts[1];
+//                        String version = artifactParts[3];
+//                        expectedTransitives.putIfAbsent(key, version);
+//                    }
+//                }
+//            }
+//        }
+//
+//        for (String line : treeLines) {
+//            for (Map.Entry<String, String> entry : expectedTransitives.entrySet()) {
+//                String gav = entry.getKey();
+//                String expectedVersion = entry.getValue();
+//                if (line.contains(gav) && line.contains(":jar:") && !line.contains("->")) {
+//                    String[] parts = line.trim().split(":");
+//                    if (parts.length >= 4) {
+//                        String actualVersion = parts[3];
+//                        if (!actualVersion.equals(expectedVersion)) {
+//                            conflicts.add(" Závislost " + gav + " očekává verzi " + expectedVersion + ", ale nalezena verze " + actualVersion);
+//                        }
+//                    }
+//                }
+//            }
+//        }
+//
+//        return conflicts;
+//    }
+
+
+    private List<ModuleDTO> flattenModules(List<ModuleDTO> modules) {
+        List<ModuleDTO> result = new ArrayList<>();
+        for (ModuleDTO m : modules) {
+            result.add(m);
+            if (m.getSubmodules() != null && !m.getSubmodules().isEmpty()) {
+                result.addAll(flattenModules(m.getSubmodules()));
+            }
+        }
+        return result;
+    }
+
+
+    /**
+     * Projde všechny moduly (rekurzivně) a pro každý spustí dependency:tree -Dverbose.
+     * Z každého výstupu vyparsuje omitnuté konflikty a sloučí je do jednoho seznamu.
+     */
+    public List<String> checkAllModulesConflicts() throws Exception {
+        if (loadedProject == null || loadedProject.getModules() == null) {
+            throw new IllegalStateException("Projekt nebo seznam modulů není načten.");
         }
 
-        File pomFile = new File(pomPath);
-        File parentDir = pomFile.getParentFile();
-        File outputFile = new File(parentDir, "deps.txt");
+        List<String> allConflicts = new ArrayList<>();
 
-        InvocationRequest request = new DefaultInvocationRequest();
-        request.setPomFile(pomFile);
-        request.setGoals(List.of(
-                "validate",
-                "dependency:tree",
-                "-DoutputFile=" + outputFile.getAbsolutePath(),
-                "-DoutputType=text"
-        ));
+        // 1) Získáme plochý seznam všech modulů (včetně submodulů).
+        List<ModuleDTO> allModules = flattenModules(loadedProject.getModules());
 
-        StringBuilder outputLog = new StringBuilder();
-        Invoker invoker = new DefaultInvoker();
-        invoker.setMavenHome(new File("/usr/local/Cellar/maven/3.9.6/libexec"));
-        invoker.setOutputHandler(outputLog::append);
-        invoker.setErrorHandler(outputLog::append);
+        // 2) Pro každý modul spustíme "dependency:tree -Dverbose"
+        for (ModuleDTO module : allModules) {
+            File pomFile = new File(module.getPomPath());
+            if (!pomFile.exists()) {
+                // Kdyby náhodou modul neměl POM
+                continue;
+            }
 
-        InvocationResult result = invoker.execute(request);
-        if (result.getExitCode() != 0) {
-            throw new RuntimeException("Nepodařilo se získat strom závislostí.");
+            // Vytvoříme unikátní jméno výstupního souboru pro tento modul
+            File outFile = new File(pomFile.getParentFile(), "deps_verbose_" + module.getName() + ".txt");
+
+            InvocationRequest request = new DefaultInvocationRequest();
+            request.setPomFile(pomFile);
+            request.setGoals(List.of(
+                    "dependency:tree",
+                    "-Dverbose=true",
+                    "-DoutputFile=" + outFile.getAbsolutePath()
+            ));
+
+            Invoker invoker = new DefaultInvoker();
+            invoker.setMavenHome(new File("/usr/local/Cellar/maven/3.9.6/libexec"));
+            InvocationResult result = invoker.execute(request);
+            if (result.getExitCode() != 0) {
+                throw new RuntimeException("dependency:tree selhalo pro modul " + module.getName()
+                        + ". Chyba: " + result.getExecutionException());
+            }
+
+            // 3) Každý modul analyzujeme a sloučíme do allConflicts
+            List<String> modConflicts = analyzeAllVerboseConflicts(outFile);
+            allConflicts.addAll(modConflicts);
         }
 
+        List<String> filteredConflicts = allConflicts.stream()
+                .distinct()
+                .collect(Collectors.toList());
+
+        return filteredConflicts;
+    }
+
+
+    private List<String> analyzeAllVerboseConflicts(File verboseFile) throws IOException {
+        List<String> lines = Files.readAllLines(verboseFile.toPath());
         List<String> conflicts = new ArrayList<>();
-        List<String> treeLines = List.of(outputLog.toString().split("\n"));
 
-        // === 1. Detekce klasických konfliktů ===
-        for (String line : treeLines) {
-            if (line.contains("must be unique") || line.contains("conflict") || line.contains("multiple versions")) {
-                conflicts.add("Konflikt: " + line.trim());
-            }
-        }
+        // Regex, co najde např.
+        //   (org.junit.jupiter:junit-jupiter-params:jar:5.10.2:test - omitted for conflict with 5.0.3)
+        Pattern pattern = Pattern.compile(
+                "\\(([^:]+):([^:]+):jar:([^:]+):[^)]+\\s-\\s+omitted\\s+for\\s+conflict\\s+with\\s+([^\\)]+)\\)"
+        );
 
-        // === 2. Detekce přepisů transitivních závislostí ===
-        Map<String, String> expectedTransitives = new HashMap<>();
-        for (String line : treeLines) {
-            if (line.contains("->") && line.contains(":jar:")) {
-                // např: org.junit.jupiter:junit-jupiter -> org.junit.jupiter:junit-jupiter-params:jar:5.10.2
-                String[] parts = line.trim().split("->");
-                if (parts.length == 2) {
-                    String[] artifactParts = parts[1].trim().split(":");
-                    if (artifactParts.length >= 4) {
-                        String key = artifactParts[0] + ":" + artifactParts[1];
-                        String version = artifactParts[3];
-                        expectedTransitives.putIfAbsent(key, version);
-                    }
+        for (String line : lines) {
+            Matcher matcher = pattern.matcher(line);
+            if (matcher.find()) {
+                String groupId        = matcher.group(1);
+                String artifactId     = matcher.group(2);
+                String omittedVersion = matcher.group(3);
+                String forcedVersion  = matcher.group(4).trim();
+
+                // Pokud je omittedVersion > forcedVersion => reálně zahazujeme novější
+                if (isVersionHigher(omittedVersion, forcedVersion)) {
+                    conflicts.add(String.format(
+                            "Konflikt: %s:%s -> vyšší verze %s je vyřazena, " +
+                                    "Maven ponechal nižší verzi %s.",
+                            groupId, artifactId, omittedVersion, forcedVersion
+                    ));
                 }
             }
         }
 
-        for (String line : treeLines) {
-            for (Map.Entry<String, String> entry : expectedTransitives.entrySet()) {
-                String gav = entry.getKey();
-                String expectedVersion = entry.getValue();
-                if (line.contains(gav) && line.contains(":jar:") && !line.contains("->")) {
-                    String[] parts = line.trim().split(":");
-                    if (parts.length >= 4) {
-                        String actualVersion = parts[3];
-                        if (!actualVersion.equals(expectedVersion)) {
-                            conflicts.add(" Závislost " + gav + " očekává verzi " + expectedVersion + ", ale nalezena verze " + actualVersion);
-                        }
-                    }
-                }
-            }
-        }
 
         return conflicts;
     }
 
 
 
-    public List<String> detectOverriddenTransitiveConflicts(UpdateDependencyRequest request, String modulePomPath) throws Exception {
-        File pomFile = new File(modulePomPath);
-        File parentDir = pomFile.getParentFile();
-        File dotFile = new File(parentDir, "deps.dot");
 
-        InvocationRequest treeRequest = new DefaultInvocationRequest();
-        treeRequest.setPomFile(pomFile);
-        treeRequest.setGoals(List.of(
+
+//    public List<String> detectOverriddenTransitiveConflicts(UpdateDependencyRequest request, String modulePomPath) throws Exception {
+//        File pomFile = new File(modulePomPath);
+//        File parentDir = pomFile.getParentFile();
+//        File dotFile = new File(parentDir, "deps.dot");
+//
+//        InvocationRequest treeRequest = new DefaultInvocationRequest();
+//        treeRequest.setPomFile(pomFile);
+//        treeRequest.setGoals(List.of(
+//                "dependency:tree",
+//                "-DoutputType=dot",
+//                "-DoutputFile=" + dotFile.getAbsolutePath()
+//        ));
+//
+//        Invoker invoker = new DefaultInvoker();
+//        invoker.setMavenHome(new File("/usr/local/Cellar/maven/3.9.6/libexec"));
+//        treeRequest.setBatchMode(true);
+//        InvocationResult result = invoker.execute(treeRequest);
+//        if (result.getExitCode() != 0) {
+//            throw new RuntimeException("Nepodařilo se získat strom závislostí.");
+//        }
+//
+//        List<String> warnings = new ArrayList<>();
+//        List<String> lines = java.nio.file.Files.readAllLines(dotFile.toPath());
+//
+//        String targetDependencyKey = request.getGroupId() + ":" + request.getArtifactId();
+//        String requestedVersion = request.getNewVersion();
+//
+//        for (String line : lines) {
+//            if (line.contains("->")) {
+//                String[] parts = line.split("->");
+//                if (parts.length == 2) {
+//                    String from = parts[0].replace("\"", "").trim();
+//                    String to = parts[1].replace("\"", "").trim();
+//
+//                    String[] toParts = to.split(":");
+//                    if (toParts.length >= 3) {
+//                        String toGroupArtifact = toParts[0] + ":" + toParts[1];
+//                        String toVersion = toParts[2];
+//
+//                        // Zajímají tě jen situace, kdy tranzitivní verze je vyšší, než tebou nastavená.
+//                        if (toGroupArtifact.equals(targetDependencyKey)) {
+//                            if (isVersionHigher(toVersion, requestedVersion)) {
+//                                warnings.add("Závislost " + from + " očekává " + targetDependencyKey + ":" + toVersion +
+//                                        ", ale ty jsi nastavil nižší verzi: " + requestedVersion);
+//                            }
+//                        }
+//                    }
+//                }
+//            }
+//        }
+//
+//        return warnings;
+//    }
+//
+//
+
+
+    public List<String> detectGlobalConflicts(UpdateDependencyRequest request) throws Exception {
+        ModuleDTO module = findModuleByName(request.getModuleName(), loadedProject.getModules());
+        File modulePomFile = new File(module.getPomPath());
+
+        File outputFile = new File(modulePomFile.getParentFile(), "local_deps_verbose.txt");
+
+        InvocationRequest requestVerbose = new DefaultInvocationRequest();
+        requestVerbose.setPomFile(modulePomFile);
+        requestVerbose.setGoals(List.of(
                 "dependency:tree",
-                "-DoutputType=dot",
-                "-DoutputFile=" + dotFile.getAbsolutePath()
+                "-Dverbose=true",
+                "-DoutputFile=" + outputFile.getAbsolutePath()
         ));
 
         Invoker invoker = new DefaultInvoker();
         invoker.setMavenHome(new File("/usr/local/Cellar/maven/3.9.6/libexec"));
-        treeRequest.setBatchMode(true);
-        InvocationResult result = invoker.execute(treeRequest);
+        InvocationResult result = invoker.execute(requestVerbose);
+
         if (result.getExitCode() != 0) {
-            throw new RuntimeException("Nepodařilo se získat strom závislostí.");
+            throw new RuntimeException("Nepodařilo se získat strom závislostí (verbose) v submodulu: " + module.getName());
         }
 
-        List<String> warnings = new ArrayList<>();
-        List<String> lines = java.nio.file.Files.readAllLines(dotFile.toPath());
-
-        String targetDependencyKey = request.getGroupId() + ":" + request.getArtifactId();
-        String requestedVersion = request.getNewVersion();
-
-        for (String line : lines) {
-            if (line.contains("->")) {
-                String[] parts = line.split("->");
-                if (parts.length == 2) {
-                    String from = parts[0].replace("\"", "").trim();
-                    String to = parts[1].replace("\"", "").trim();
-
-                    String[] toParts = to.split(":");
-                    if (toParts.length >= 3) {
-                        String toGroupArtifact = toParts[0] + ":" + toParts[1];
-                        String toVersion = toParts[2];
-
-                        // Zajímají tě jen situace, kdy tranzitivní verze je vyšší, než tebou nastavená.
-                        if (toGroupArtifact.equals(targetDependencyKey)) {
-                            if (isVersionHigher(toVersion, requestedVersion)) {
-                                warnings.add("Závislost " + from + " očekává " + targetDependencyKey + ":" + toVersion +
-                                        ", ale ty jsi nastavil nižší verzi: " + requestedVersion);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        return warnings;
+        return analyzeVerboseTree(outputFile, request);
     }
 
-    // Pomocná metoda na porovnávání verzí (jednoduchá implementace)
+
+
+
     private boolean isVersionHigher(String existing, String requested) {
         String[] existingParts = existing.split("\\.");
         String[] requestedParts = requested.split("\\.");
@@ -407,15 +530,100 @@ public class ProjectService {
             if (existingNum < requestedNum) return false;
         }
 
-        return false; // verze jsou stejné
+        return false;
     }
 
 
 
+// ...
+
+    private List<String> analyzeVerboseTree(File verboseFile, UpdateDependencyRequest request) throws IOException {
+        List<String> lines = Files.readAllLines(verboseFile.toPath());
+        List<String> conflicts = new ArrayList<>();
+
+        // Vzorek, který matchuje např.:
+        // (org.junit.jupiter:junit-jupiter-params:jar:5.10.2:test - omitted for conflict with 5.0.3)
+        Pattern pattern = Pattern.compile(
+                "\\(([^:]+):([^:]+):jar:([^:]+):[^)]+\\s-\\s+omitted\\s+for\\s+conflict\\s+with\\s+([^\\)]+)\\)"
+        );
+
+        // Pokud chcete ukazovat konflikty jen pro tu dependency, kterou měníte:
+        String targetDepKey = request.getGroupId() + ":" + request.getArtifactId();
+        String explicitVersion = request.getNewVersion();
+
+        for (String line : lines) {
+            // PROJDEME JEDNU ŘÁDKU:
+            Matcher matcher = pattern.matcher(line);
+
+            // NAJDEME PRVNÍ (a jediný) match v téhle řádce:
+            if (matcher.find()) {
+                System.out.println("LINE MATCH: " + line); // pro ladění
+
+                String groupId = matcher.group(1);
+                String artifactId = matcher.group(2);
+                String omittedVersion = matcher.group(3);
+                String forcedVersion = matcher.group(4).trim();
+
+                // Pokud chcete konflikty hlásit pouze pro G:A, který uživatel mění:
+                String foundDepKey = groupId + ":" + artifactId;
+                if (!foundDepKey.equals(targetDepKey)) {
+                    continue;  // Nepřidávat do conflict listu
+                }
+
+                // Porovnáme verze – pokud je omittedVersion vyšší než forcedVersion,
+                // znamená to, že Maven zahodil novější verzi a ponechal starší = konflikt.
+                if (isVersionHigher(omittedVersion, forcedVersion)) {
+                    conflicts.add(String.format(
+                            "Konflikt: Tranzitivní závislost %s vyžaduje verzi %s, " +
+                                    "ale explicitně byla nastavena nižší verze %s",
+                            targetDepKey, omittedVersion, forcedVersion
+                    ));
+                }
+            }
+        }
+
+        return conflicts;
+    }
 
 
-
-
+//
+//    private String extractVersion(String line, String depKey) {
+//        String[] parts = line.split(depKey + ":");
+//        if (parts.length > 1) {
+//            String versionPart = parts[1];
+//            String version = versionPart.split(":")[1];
+//            return version.trim();
+//        }
+//        return "unknown";
+//    }
+//
+//
+//
+//    public List<String> detectVersionConflictsVerbose(File modulePomFile, UpdateDependencyRequest request) throws Exception {
+//        File outputFile = new File(modulePomFile.getParentFile(), "deps_verbose.txt");
+//
+//        InvocationRequest verboseTreeRequest = new DefaultInvocationRequest();
+//        verboseTreeRequest.setPomFile(modulePomFile);
+//        verboseTreeRequest.setGoals(List.of(
+//                "dependency:tree",
+//                "-Dverbose=true",
+//                "-DoutputFile=" + outputFile.getAbsolutePath()
+//        ));
+//
+//        Invoker invoker = new DefaultInvoker();
+//        invoker.setMavenHome(new File("/usr/local/Cellar/maven/3.9.6/libexec"));
+//        verboseTreeRequest.setBatchMode(true);
+//        InvocationResult result = invoker.execute(verboseTreeRequest);
+//        if (result.getExitCode() != 0) {
+//            throw new RuntimeException("Nepodařilo se získat strom závislostí (verbose).");
+//        }
+//
+//        return analyzeVerboseTree(outputFile, request);
+//    }
+//
+//
+//
+//
 
 
     //-------------------------------Versions-------------------------------
