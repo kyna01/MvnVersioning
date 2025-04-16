@@ -1,0 +1,101 @@
+
+
+//    public List<String> detectOverriddenTransitiveConflicts(UpdateDependencyRequest request, String modulePomPath) throws Exception {
+//        File pomFile = new File(modulePomPath);
+//        File parentDir = pomFile.getParentFile();
+//        File dotFile = new File(parentDir, "deps.dot");
+//
+//        InvocationRequest treeRequest = new DefaultInvocationRequest();
+//        treeRequest.setPomFile(pomFile);
+//        treeRequest.setGoals(List.of(
+//                "dependency:tree",
+//                "-DoutputType=dot",
+//                "-DoutputFile=" + dotFile.getAbsolutePath()
+//        ));
+//
+//        Invoker invoker = new DefaultInvoker();
+//        invoker.setMavenHome(new File("/usr/local/Cellar/maven/3.9.6/libexec"));
+//        treeRequest.setBatchMode(true);
+//        InvocationResult result = invoker.execute(treeRequest);
+//        if (result.getExitCode() != 0) {
+//            throw new RuntimeException("Nepodařilo se získat strom závislostí.");
+//        }
+//
+//        List<String> warnings = new ArrayList<>();
+//        List<String> lines = java.nio.file.Files.readAllLines(dotFile.toPath());
+//
+//        String targetDependencyKey = request.getGroupId() + ":" + request.getArtifactId();
+//        String requestedVersion = request.getNewVersion();
+//
+//        for (String line : lines) {
+//            if (line.contains("->")) {
+//                String[] parts = line.split("->");
+//                if (parts.length == 2) {
+//                    String from = parts[0].replace("\"", "").trim();
+//                    String to = parts[1].replace("\"", "").trim();
+//
+//                    String[] toParts = to.split(":");
+//                    if (toParts.length >= 3) {
+//                        String toGroupArtifact = toParts[0] + ":" + toParts[1];
+//                        String toVersion = toParts[2];
+//
+//                        // Zajímají tě jen situace, kdy tranzitivní verze je vyšší, než tebou nastavená.
+//                        if (toGroupArtifact.equals(targetDependencyKey)) {
+//                            if (isVersionHigher(toVersion, requestedVersion)) {
+//                                warnings.add("Závislost " + from + " očekává " + targetDependencyKey + ":" + toVersion +
+//                                        ", ale ty jsi nastavil nižší verzi: " + requestedVersion);
+//                            }
+//                        }
+//                    }
+//                }
+//            }
+//        }
+//
+//        return warnings;
+//    }
+//
+//
+
+
+
+
+
+
+//
+//    private String extractVersion(String line, String depKey) {
+//        String[] parts = line.split(depKey + ":");
+//        if (parts.length > 1) {
+//            String versionPart = parts[1];
+//            String version = versionPart.split(":")[1];
+//            return version.trim();
+//        }
+//        return "unknown";
+//    }
+//
+//
+//
+//    public List<String> detectVersionConflictsVerbose(File modulePomFile, UpdateDependencyRequest request) throws Exception {
+//        File outputFile = new File(modulePomFile.getParentFile(), "deps_verbose.txt");
+//
+//        InvocationRequest verboseTreeRequest = new DefaultInvocationRequest();
+//        verboseTreeRequest.setPomFile(modulePomFile);
+//        verboseTreeRequest.setGoals(List.of(
+//                "dependency:tree",
+//                "-Dverbose=true",
+//                "-DoutputFile=" + outputFile.getAbsolutePath()
+//        ));
+//
+//        Invoker invoker = new DefaultInvoker();
+//        invoker.setMavenHome(new File("/usr/local/Cellar/maven/3.9.6/libexec"));
+//        verboseTreeRequest.setBatchMode(true);
+//        InvocationResult result = invoker.execute(verboseTreeRequest);
+//        if (result.getExitCode() != 0) {
+//            throw new RuntimeException("Nepodařilo se získat strom závislostí (verbose).");
+//        }
+//
+//        return analyzeVerboseTree(outputFile, request);
+//    }
+//
+//
+//
+//

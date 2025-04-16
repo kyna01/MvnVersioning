@@ -1,0 +1,1229 @@
+evidentně se teď v tom nechápeš, chci momentálně vytvořit nový endpoint na změnu verzí v modulech dependencies a dependencyManagement funguje správně, podle zadání:
+vytvořit nástroj, který umožní snadnou a efektivní správu verzí artifaktů u
+modulů, které jsou součástí multimodulárních Maven projektů.
+Změna verze jednoho modulu v případech, kdy má daný modul mnoho závislostí na dalších modulech a
+tyto závislosti je také nutné aktualizovat, je poměrně časově i technicky náročná. Cílem této práce je toto
+zjednodušit a automatizovat.
+Konkrétně bude vytvořen nástroj, který bude umožňovat snadné povýšení verze jednoho modulu a
+automatickou propagaci této změny do dalších modulů v podobě použitých závislostí. Nástroj také nabídne
+možnost povýšení verze těchto modulů a bude schopen zkontrolovat, zda jsou všechny závislosti
+aktualizovány na nejnovější verze. Při implementaci je možno použít další nástroje jako je maven plugin
+„versions“.
+Výstupem práce bude funkční nástroj využívající technologie Maven a implementovaný v jazyce Java. V
+rámci práce bude provedeno porovnání s existujícími nástroji pro správu verzí multimodulárních Maven
+projektů a bude provedeno testování v reálném prostředí.
+
+tam si z toho najdi jen tu práci s moduly a sub moduly atd...
+super pojďme udělat controller a service na správu těch verzí těch modulů, podle toho zadání, chce to jen jeden controller? když chci měnit verzi přímo u modulu aby se promítl do další je jen starost service jestli to chápu správně ne? možná potom ještě třeba možnost, že
+když by to bylo vše v dependencyManagement tam asi další controller? nebo nevim teda,
+takže nějak musíme s tím začít
+posílám aktuální controller a service,
+
+package kynicond.bp.maven.versioning.controller;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import kynicond.bp.maven.versioning.entity.dto.LoadProjectRequest;
+import kynicond.bp.maven.versioning.entity.dto.ProjectDTO;
+import kynicond.bp.maven.versioning.entity.dto.UpdateDependencyRequest;
+import kynicond.bp.maven.versioning.service.ProjectService;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/project")
+public class ProjectController {
+
+    private final ProjectService projectService;
+
+    public ProjectController(ProjectService projectService) {
+        this.projectService = projectService;
+    }
+
+    @Operation(summary = "Načte informace o Maven projektu")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Projekt úspěšně načten"),
+            @ApiResponse(responseCode = "400", description = "Chyba při načítání projektu")
+    })
+    @PostMapping("/load-structure")
+    public ResponseEntity<ProjectDTO> loadProjectStructure(@RequestBody LoadProjectRequest request) {
+        try {
+            ProjectDTO dto = projectService.loadStructureOnly(request.getPomPath());
+            return ResponseEntity.ok(dto);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+
+
+    @Operation(summary = "Načte dané dependencies projektu")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Dependencies úspěšně načteny"),
+            @ApiResponse(responseCode = "400", description = "Chyba při načítání projektu")
+    })
+    @PostMapping("/load-with-dependencies")
+    public ResponseEntity<ProjectDTO> loadProjectWithDependencies(@RequestBody LoadProjectRequest request) {
+        try {
+            ProjectDTO dto = projectService.loadWithDependencies(request.getPomPath());
+            return ResponseEntity.ok(dto);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+    @Operation(summary = "Aktualizuje verzi konkrétní dependency v modulu")
+    @PostMapping("/update-dependency-version")
+    public ResponseEntity<?> updateDependencyRequest(@RequestBody UpdateDependencyRequest updateDependencyRequest){
+        try {
+            List<String> conflicts = projectService.updateDependencyVersion(updateDependencyRequest);
+            System.out.println(" ");
+            System.out.println(conflicts);
+            if (conflicts.isEmpty()){
+                return ResponseEntity.ok().build();
+            }
+            else return ResponseEntity.badRequest().body(conflicts);
+
+        }catch (Exception e){
+            e.printStackTrace();
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+    @Operation(summary = "Aktualizuje verzi konkrétní dependency v dependencyManagementu modulu")
+    @PostMapping("/update-dependencyManagement-version")
+    public ResponseEntity<?> updateDependencyManagementRequest(@RequestBody UpdateDependencyRequest updateDependencyRequest){
+        try {
+            List<String> conflicts = projectService.updateDependencyManagementVersion(updateDependencyRequest);
+            System.out.println(" ");
+            System.out.println(conflicts);
+            if (conflicts.isEmpty()){
+                return ResponseEntity.ok().build();
+            }
+            else return ResponseEntity.badRequest().body(conflicts);
+
+        }catch (Exception e){
+            e.printStackTrace();
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    @Operation(summary = "Vrátí seznam dostupných verzí pro závislost z Maven Central")
+    @GetMapping("/dependency-versions")
+    public ResponseEntity<List<String>> getAvailableDependencyVersions(@RequestParam String groupId, @RequestParam String artifactId)
+    {
+        try {
+            List<String> versions = projectService.getAvailableVersions(groupId, artifactId);
+            return ResponseEntity.ok(versions);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+
+    @Operation(summary = "Zkontroluje konflikty závislostí v projektu")
+    @GetMapping("/check-dependency-conflicts")
+    public ResponseEntity<List<String>> checkConflicts() {
+        try {
+            List<String> conflicts = projectService.checkAllModulesConflicts();
+            return ResponseEntity.ok(conflicts);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+
+}
+
+
+package kynicond.bp.maven.versioning.service;
+
+import kynicond.bp.maven.versioning.entity.dto.DependencyDTO;
+import kynicond.bp.maven.versioning.entity.dto.ModuleDTO;
+import kynicond.bp.maven.versioning.entity.dto.ProjectDTO;
+import kynicond.bp.maven.versioning.entity.dto.UpdateDependencyRequest;
+import org.apache.maven.shared.invoker.*;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+@Service
+public class ProjectService {
+
+    private String projectRootPomPath;
+    private ProjectDTO loadedProject;
+
+
+    public void resetProject() {
+        this.projectRootPomPath = null;
+    }
+
+    public String getProjectPomPath() {
+        return this.projectRootPomPath;
+    }
+
+    public ProjectDTO loadStructureOnly(String pomPath) throws Exception {
+        File pomFile = new File(pomPath);
+        if (!pomFile.exists()) {
+            throw new FileNotFoundException("POM soubor nenalezen.");
+        }
+
+        this.projectRootPomPath = pomPath;
+
+        ModuleDTO rootModule = loadModuleRecursively(pomFile, false); //not
+        ModuleDTO cleaned = cleanForStructure(rootModule);
+
+        ProjectDTO project = new ProjectDTO();
+        project.setGroupId(cleaned.getGroupId());
+        project.setArtifactId(cleaned.getArtifactId());
+        project.setVersion(cleaned.getVersion());
+        project.setModules(cleaned.getSubmodules());
+
+        this.loadedProject = project;
+
+        return project;
+    }
+
+    public ProjectDTO loadWithDependencies(String pomPath) throws Exception {
+        File pomFile = new File(pomPath);
+        if (!pomFile.exists()) {
+            throw new FileNotFoundException("POM soubor nenalezen.");
+        }
+
+        this.projectRootPomPath = pomPath;
+
+        ModuleDTO rootModule = loadModuleRecursively(pomFile, true); // included
+
+        ProjectDTO project = new ProjectDTO();
+        project.setGroupId(rootModule.getGroupId());
+        project.setArtifactId(rootModule.getArtifactId());
+        project.setVersion(rootModule.getVersion());
+        project.setModules(rootModule.getSubmodules());
+
+        project.setDependencies(rootModule.getDependencies());
+
+        this.loadedProject = project;
+
+
+        return project;
+    }
+
+
+    private ModuleDTO loadModuleRecursively(File pomFile, boolean includeDependencies) throws Exception {
+        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        DocumentBuilder builder = factory.newDocumentBuilder();
+        Document doc = builder.parse(pomFile);
+        Element root = doc.getDocumentElement();
+
+        ModuleDTO module = new ModuleDTO();
+        module.setName(pomFile.getParentFile().getName());
+        module.setArtifactId(getTagValue(root, "artifactId"));
+        module.setGroupId(getTagValue(root, "groupId"));
+        module.setVersion(getTagValue(root, "version"));
+        module.setPomPath(pomFile.getAbsolutePath());
+
+
+        NodeList parentNodes = root.getElementsByTagName("parent");
+        if (parentNodes.getLength() > 0) {
+            Element parentEl = (Element) parentNodes.item(0);
+            module.setParentGroupId(getTagValue(parentEl, "groupId"));
+            module.setParentArtifactId(getTagValue(parentEl, "artifactId"));
+            module.setParentVersion(getTagValue(parentEl, "version"));
+        }
+
+
+        if (includeDependencies) {
+            List<DependencyDTO> dependencies = loadDependencies(root);
+            module.setDependencies(dependencies);
+
+            List<DependencyDTO> dmDeps = loadDependencyManagement(root);
+            module.setDependencyManagement(dmDeps);
+        } else {
+            module.setDependencies(new ArrayList<>());
+        }
+
+
+        NodeList moduleNodes = root.getElementsByTagName("module");
+        List<ModuleDTO> submodules = new ArrayList<>();
+
+        for (int i = 0; i < moduleNodes.getLength(); i++) {
+            String subModuleName = moduleNodes.item(i).getTextContent().trim();
+            File subPom = new File(pomFile.getParent(), subModuleName + "/pom.xml");
+            if (subPom.exists()) {
+                ModuleDTO subModule = loadModuleRecursively(subPom, includeDependencies);
+                subModule.setName(subModuleName);
+                submodules.add(subModule);
+            }
+        }
+
+        module.setSubmodules(submodules);
+        return module;
+    }
+
+    private List<DependencyDTO> loadDependencies(Element root) {
+        List<DependencyDTO> result = new ArrayList<>();
+
+        NodeList dependenciesAll = root.getElementsByTagName("dependencies");
+
+        for (int i = 0; i < dependenciesAll.getLength(); i++) {
+            Element depsEl =  (Element) dependenciesAll.item(i);
+
+            Node parent = depsEl.getParentNode();
+            if (parent != null && "dependencyManagement".equals(parent.getNodeName())) {
+                continue;
+            }
+
+
+            NodeList depNodes = depsEl.getElementsByTagName("dependency");
+            for (int j = 0; j < depNodes.getLength(); j++) {
+                Element depEl = (Element) depNodes.item(j);
+
+                DependencyDTO dep = new DependencyDTO();
+                dep.setGroupId(getTagValue(depEl, "groupId"));
+                dep.setArtifactId(getTagValue(depEl, "artifactId"));
+                dep.setVersion(getTagValue(depEl, "version"));
+                result.add(dep);
+            }
+        }
+
+        return result;
+    }
+
+    private List<DependencyDTO> loadDependencyManagement(Element root){
+        List<DependencyDTO> dmDeps = new ArrayList<>();
+
+        NodeList dmNodes = root.getElementsByTagName("dependencyManagement");
+        if (dmNodes.getLength() == 0){
+            return dmDeps;
+        }
+
+        Element dmElement = (Element) dmNodes.item(0);
+
+        NodeList dependencies = dmElement.getElementsByTagName("dependency");
+
+        for (int i = 0; i < dependencies.getLength(); i++){
+            Node node = dependencies.item(i);
+            if (node.getNodeType() == Node.ELEMENT_NODE){
+                Element depElement = (Element) node;
+
+                DependencyDTO dep = new DependencyDTO();
+                dep.setGroupId(getTagValue(depElement, "groupId"));
+                dep.setArtifactId(getTagValue(depElement, "artifactId"));
+                dep.setVersion(getTagValue(depElement, "version"));
+
+                dmDeps.add(dep);
+            }
+        }
+
+        return dmDeps;
+    }
+
+
+
+
+    private ModuleDTO cleanForStructure(ModuleDTO original) {
+        ModuleDTO cleaned = new ModuleDTO();
+        cleaned.setName(original.getName());
+        cleaned.setArtifactId(original.getArtifactId());
+        cleaned.setVersion(original.getVersion());
+
+        List<ModuleDTO> cleanedSubmodules = new ArrayList<>();
+        if (original.getSubmodules() != null) {
+            for (ModuleDTO sub : original.getSubmodules()) {
+                cleanedSubmodules.add(cleanForStructure(sub));
+            }
+        }
+
+        cleaned.setSubmodules(cleanedSubmodules);
+        return cleaned;
+    }
+
+
+
+    private String getTagValue(Element element, String tag) {
+        NodeList list = element.getElementsByTagName(tag);
+        if (list.getLength() == 0) return "";
+        return list.item(0).getTextContent().trim();
+    }
+
+
+
+
+    //-------------------------------Update-------------------------------
+    public List<String> updateDependencyVersion(UpdateDependencyRequest request) throws Exception {
+        if (projectRootPomPath == null || loadedProject == null) {
+            throw new IllegalStateException("Projekt není načten nebo není dostupný strom modulů.");
+        }
+
+        ModuleDTO module = findModuleByName(request.getModuleName(), loadedProject.getModules());
+        if (module == null || module.getPomPath() == null) {
+            throw new FileNotFoundException("Nepodařilo se najít pom.xml pro modul: " + request.getModuleName());
+        }
+
+        File modulePomFile = new File(module.getPomPath());
+
+        InvocationRequest invocationRequest = new DefaultInvocationRequest();
+        invocationRequest.setPomFile(modulePomFile);
+
+        invocationRequest.setGoals(List.of(
+                "versions:use-dep-version",
+                "-N",
+                "-Dincludes=" + request.getGroupId() + ":" + request.getArtifactId(),
+                "-DdepVersion=" + request.getNewVersion(),
+                "-DforceVersion=true",
+                "-DprocessDependencies=true",
+                "-DprocessDependencyManagement=false"
+        ));
+
+        Invoker invoker = new DefaultInvoker();
+
+        invoker.setMavenHome(new File("/usr/local/Cellar/maven/3.9.6/libexec"));
+        invoker.setOutputHandler(System.out::println);
+        invoker.setErrorHandler(System.err::println);
+
+        InvocationResult result = invoker.execute(invocationRequest);
+        if (result.getExitCode() != 0){
+            throw new RuntimeException("Maven příkaz selhal." + result.getExecutionException());
+        }
+
+
+
+
+
+        List<String> versionConflictWarnings = detectGlobalConflicts(request);
+
+        if (!versionConflictWarnings.isEmpty()) {
+            throw new RuntimeException("Nekompatibilní verze:\n" + String.join("\n", versionConflictWarnings));
+        }
+
+        return versionConflictWarnings;
+
+    }
+
+    private ModuleDTO findModuleByName(String name, List<ModuleDTO> modules) {
+        for (ModuleDTO module : modules) {
+            if (module.getName().equals(name)) {
+                return module;
+            }
+            if (module.getSubmodules() != null) {
+                ModuleDTO sub = findModuleByName(name, module.getSubmodules());
+                if (sub != null) return sub;
+            }
+        }
+        return null;
+    }
+
+
+
+
+
+    public List<String> updateDependencyManagementVersion(UpdateDependencyRequest request) throws Exception {
+        if (projectRootPomPath == null || loadedProject == null) {
+            throw new IllegalStateException("Projekt není načten nebo není dostupný strom modulů.");
+        }
+
+        ModuleDTO module = findModuleByName(request.getModuleName(), loadedProject.getModules());
+        if (module == null || module.getPomPath() == null) {
+            throw new FileNotFoundException("Nepodařilo se najít pom.xml pro modul: " + request.getModuleName());
+        }
+
+        File modulePomFile = new File(module.getPomPath());
+
+        InvocationRequest invocationRequest = new DefaultInvocationRequest();
+        invocationRequest.setPomFile(modulePomFile);
+
+        invocationRequest.setGoals(List.of(
+                "versions:use-dep-version",
+                "-N",
+                "-Dincludes=" + request.getGroupId() + ":" + request.getArtifactId(),
+                "-DdepVersion=" + request.getNewVersion(),
+                "-DforceVersion=true",
+                "-DprocessDependencies=false",
+                "-DprocessDependencyManagement=true"
+        ));
+
+        Invoker invoker = new DefaultInvoker();
+
+        invoker.setMavenHome(new File("/usr/local/Cellar/maven/3.9.6/libexec"));
+        invoker.setOutputHandler(System.out::println);
+        invoker.setErrorHandler(System.err::println);
+
+        InvocationResult result = invoker.execute(invocationRequest);
+        if (result.getExitCode() != 0){
+            throw new RuntimeException("Maven příkaz selhal." + result.getExecutionException());
+        }
+
+
+
+
+
+        List<String> versionConflictWarnings = detectGlobalConflicts(request);
+
+        if (!versionConflictWarnings.isEmpty()) {
+            throw new RuntimeException("Nekompatibilní verze:\n" + String.join("\n", versionConflictWarnings));
+        }
+
+        return versionConflictWarnings;
+
+    }
+
+
+
+
+    //-----------------------------Conflicts----------------------------
+
+
+
+    private List<ModuleDTO> flattenModules(List<ModuleDTO> modules) {
+        List<ModuleDTO> result = new ArrayList<>();
+        for (ModuleDTO m : modules) {
+            result.add(m);
+            if (m.getSubmodules() != null && !m.getSubmodules().isEmpty()) {
+                result.addAll(flattenModules(m.getSubmodules()));
+            }
+        }
+        return result;
+    }
+
+
+    /**
+     * Projde všechny moduly (rekurzivně) a pro každý spustí dependency:tree -Dverbose.
+     * Z každého výstupu vyparsuje omitnuté konflikty a sloučí je do jednoho seznamu.
+     */
+    public List<String> checkAllModulesConflicts() throws Exception {
+        if (loadedProject == null || loadedProject.getModules() == null) {
+            throw new IllegalStateException("Projekt nebo seznam modulů není načten.");
+        }
+
+        List<String> allConflicts = new ArrayList<>();
+
+        // 1) Získáme plochý seznam všech modulů (včetně submodulů).
+        List<ModuleDTO> allModules = flattenModules(loadedProject.getModules());
+
+        // 2) Pro každý modul spustíme "dependency:tree -Dverbose"
+        for (ModuleDTO module : allModules) {
+            File pomFile = new File(module.getPomPath());
+            if (!pomFile.exists()) {
+                // Kdyby náhodou modul neměl POM
+                continue;
+            }
+
+            // Vytvoříme unikátní jméno výstupního souboru pro tento modul
+            File outFile = new File(pomFile.getParentFile(), "deps_verbose_" + module.getName() + ".txt");
+
+            InvocationRequest request = new DefaultInvocationRequest();
+            request.setPomFile(pomFile);
+            request.setGoals(List.of(
+                    "dependency:tree",
+                    "-Dverbose=true",
+                    "-DoutputFile=" + outFile.getAbsolutePath()
+            ));
+
+            Invoker invoker = new DefaultInvoker();
+            invoker.setMavenHome(new File("/usr/local/Cellar/maven/3.9.6/libexec"));
+            InvocationResult result = invoker.execute(request);
+            if (result.getExitCode() != 0) {
+                throw new RuntimeException("dependency:tree selhalo pro modul " + module.getName()
+                        + ". Chyba: " + result.getExecutionException());
+            }
+
+            // 3) Každý modul analyzujeme a sloučíme do allConflicts
+            List<String> modConflicts = analyzeAllVerboseConflicts(outFile);
+            allConflicts.addAll(modConflicts);
+        }
+
+        List<String> filteredConflicts = allConflicts.stream()
+                .distinct()
+                .collect(Collectors.toList());
+
+        return filteredConflicts;
+    }
+
+
+
+
+    private List<String> analyzeAllVerboseConflicts(File verboseFile) throws IOException {
+        List<String> lines = Files.readAllLines(verboseFile.toPath());
+        List<String> conflicts = new ArrayList<>();
+
+        // Regex, co najde např.
+        //   (org.junit.jupiter:junit-jupiter-params:jar:5.10.2:test - omitted for conflict with 5.0.3)
+        Pattern pattern = Pattern.compile(
+                "\\(([^:]+):([^:]+):jar:([^:]+):[^)]+\\s-\\s+omitted\\s+for\\s+conflict\\s+with\\s+([^\\)]+)\\)"
+        );
+
+        for (String line : lines) {
+            Matcher matcher = pattern.matcher(line);
+            if (matcher.find()) {
+                String groupId        = matcher.group(1);
+                String artifactId     = matcher.group(2);
+                String omittedVersion = matcher.group(3);
+                String forcedVersion  = matcher.group(4).trim();
+
+                // Pokud je omittedVersion > forcedVersion => reálně zahazujeme novější
+                if (isVersionHigher(omittedVersion, forcedVersion)) {
+                    conflicts.add(String.format(
+                            "Konflikt: %s:%s -> vyšší verze %s je vyřazena, " +
+                                    "Maven ponechal nižší verzi %s.",
+                            groupId, artifactId, omittedVersion, forcedVersion
+                    ));
+                }
+            }
+        }
+
+
+        return conflicts;
+    }
+
+
+
+
+
+
+
+
+
+
+
+    public List<String> detectGlobalConflicts(UpdateDependencyRequest request) throws Exception {
+        ModuleDTO module = findModuleByName(request.getModuleName(), loadedProject.getModules());
+        File modulePomFile = new File(module.getPomPath());
+
+        File outputFile = new File(modulePomFile.getParentFile(), "local_deps_verbose.txt");
+
+        InvocationRequest requestVerbose = new DefaultInvocationRequest();
+        requestVerbose.setPomFile(modulePomFile);
+        requestVerbose.setGoals(List.of(
+                "dependency:tree",
+                "-Dverbose=true",
+                "-DoutputFile=" + outputFile.getAbsolutePath()
+        ));
+
+        Invoker invoker = new DefaultInvoker();
+        invoker.setMavenHome(new File("/usr/local/Cellar/maven/3.9.6/libexec"));
+        InvocationResult result = invoker.execute(requestVerbose);
+
+        if (result.getExitCode() != 0) {
+            throw new RuntimeException("Nepodařilo se získat strom závislostí (verbose) v submodulu: " + module.getName());
+        }
+
+        return analyzeVerboseTree(outputFile, request);
+    }
+
+
+
+
+    private boolean isVersionHigher(String existing, String requested) {
+        String[] existingParts = existing.split("\\.");
+        String[] requestedParts = requested.split("\\.");
+
+        int length = Math.max(existingParts.length, requestedParts.length);
+        for (int i = 0; i < length; i++) {
+            int existingNum = i < existingParts.length ? Integer.parseInt(existingParts[i]) : 0;
+            int requestedNum = i < requestedParts.length ? Integer.parseInt(requestedParts[i]) : 0;
+
+            if (existingNum > requestedNum) return true;
+            if (existingNum < requestedNum) return false;
+        }
+
+        return false;
+    }
+
+
+
+    private List<String> analyzeVerboseTree(File verboseFile, UpdateDependencyRequest request) throws IOException {
+        List<String> lines = Files.readAllLines(verboseFile.toPath());
+        List<String> conflicts = new ArrayList<>();
+
+        // Vzorek, který matchuje např.:
+        // (org.junit.jupiter:junit-jupiter-params:jar:5.10.2:test - omitted for conflict with 5.0.3)
+        Pattern pattern = Pattern.compile(
+                "\\(([^:]+):([^:]+):jar:([^:]+):[^)]+\\s-\\s+omitted\\s+for\\s+conflict\\s+with\\s+([^\\)]+)\\)"
+        );
+
+        // Pokud chcete ukazovat konflikty jen pro tu dependency, kterou měníte:
+        String targetDepKey = request.getGroupId() + ":" + request.getArtifactId();
+        String explicitVersion = request.getNewVersion();
+
+        for (String line : lines) {
+            // PROJDEME JEDNU ŘÁDKU:
+            Matcher matcher = pattern.matcher(line);
+
+            // NAJDEME PRVNÍ (a jediný) match v téhle řádce:
+            if (matcher.find()) {
+                System.out.println("LINE MATCH: " + line); // pro ladění
+
+                String groupId = matcher.group(1);
+                String artifactId = matcher.group(2);
+                String omittedVersion = matcher.group(3);
+                String forcedVersion = matcher.group(4).trim();
+
+                // Pokud chcete konflikty hlásit pouze pro G:A, který uživatel mění:
+                String foundDepKey = groupId + ":" + artifactId;
+                if (!foundDepKey.equals(targetDepKey)) {
+                    continue;  // Nepřidávat do conflict listu
+                }
+
+                // Porovnáme verze – pokud je omittedVersion vyšší než forcedVersion,
+                // znamená to, že Maven zahodil novější verzi a ponechal starší = konflikt.
+                if (isVersionHigher(omittedVersion, forcedVersion)) {
+                    conflicts.add(String.format(
+                            "Konflikt: Tranzitivní závislost %s vyžaduje verzi %s, " +
+                                    "ale explicitně byla nastavena nižší verze %s",
+                            targetDepKey, omittedVersion, forcedVersion
+                    ));
+                }
+            }
+        }
+
+        return conflicts;
+    }
+
+
+
+
+
+
+
+
+    //-------------------------------Versions-------------------------------
+
+
+
+
+
+
+
+
+
+    public List<String> getAvailableVersions(String groupId, String artifactId){
+        System.out.println("Fetching versions for: " + groupId + ":" + artifactId);
+
+        String query = "g:\"" + groupId + "\" AND a:\"" + artifactId + "\"";
+        String url = UriComponentsBuilder.fromHttpUrl("https://search.maven.org/solrsearch/select")
+                .queryParam("q", query)
+                .queryParam("core", "gav")
+                .queryParam("rows", "200") // čím víc, tím víc verzí
+                .queryParam("wt", "json")
+                .build()
+                .toUriString();
+
+        System.out.println("Final URL: " + url);
+
+        RestTemplate restTemplate = new RestTemplate();
+        String response = restTemplate.getForObject(url,String.class);
+
+        System.out.println("Response: " + response);
+
+        JSONObject root = new JSONObject(response);
+        JSONArray docs = root.getJSONObject("response").getJSONArray("docs");
+
+        List<String> versions = new ArrayList<>();
+        for (int i = 0; i < docs.length(); i++) {
+            JSONObject doc = docs.getJSONObject(i);
+            String version = doc.getString("v");
+            versions.add(version);
+        }
+
+        return versions;
+    }
+
+}
+{
+  "groupId": "kynicond",
+  "artifactId": "BPtesting",
+  "version": "1.2",
+  "parentGroupId": null,
+  "parentArtifactId": null,
+  "parentVersion": null,
+  "modules": [
+    {
+      "name": "sub-moduleA",
+      "groupId": "kynicond",
+      "artifactId": "BPtesting",
+      "version": "1.2",
+
+
+      "parentGroupId": "kynicond",
+      "parentArtifactId": "BPtesting",
+      "parentVersion": "1.2",
+
+
+      "pomPath": "/Users/ondrejkynicky/Desktop/BP/BPtesting/sub-moduleA/pom.xml",
+      "submodules": [
+        {
+          "name": "sub-moduleA2",
+          "groupId": "kynicond",
+          "artifactId": "BPtesting",
+          "version": "1.2",
+
+          "parentGroupId": "kynicond",
+          "parentArtifactId": "BPtesting",
+          "parentVersion": "1.2",
+
+          "pomPath": "/Users/ondrejkynicky/Desktop/BP/BPtesting/sub-moduleA/sub-moduleA2/pom.xml",
+          "submodules": [],
+          "dependencies": [
+            {
+              "groupId": "org.apache.commons",
+              "artifactId": "commons-lang3",
+              "version": "3.10"
+            },
+            {
+              "groupId": "org.slf4j",
+              "artifactId": "slf4j-api",
+              "version": "2.0.13"
+            },
+            {
+              "groupId": "org.junit.jupiter",
+              "artifactId": "junit-jupiter",
+              "version": "5.10.2"
+            }
+          ],
+          "dependencyManagement": []
+        }
+      ],
+      "dependencies": [
+        {
+          "groupId": "org.junit.jupiter",
+          "artifactId": "junit-jupiter",
+          "version": "5.10.2"
+        },
+        {
+          "groupId": "org.junit.jupiter",
+          "artifactId": "junit-jupiter-params",
+          "version": "5.10.2"
+        },
+        {
+          "groupId": "org.apache.commons",
+          "artifactId": "commons-lang3",
+          "version": "3.11"
+        }
+      ],
+      "dependencyManagement": [
+        {
+          "groupId": "org.junit.jupiter",
+          "artifactId": "junit-jupiter-params",
+          "version": "5.6.0"
+        },
+        {
+          "groupId": "org.apache.commons",
+          "artifactId": "commons-lang3",
+          "version": "3.5"
+        }
+      ]
+    },
+    {
+      "name": "sub-moduleB",
+      "groupId": "kynicond",
+      "artifactId": "BPtesting",
+      "version": "1.2",
+
+      "parentGroupId": "kynicond",
+      "parentArtifactId": "BPtesting",
+      "parentVersion": "1.2",
+
+      "pomPath": "/Users/ondrejkynicky/Desktop/BP/BPtesting/sub-moduleB/pom.xml",
+      "submodules": [],
+      "dependencies": [],
+      "dependencyManagement": []
+    }
+  ],
+  "dependencies": [
+    {
+      "groupId": "org.projectlombok",
+      "artifactId": "lombok",
+      "version": "1.18.30"
+    }
+  ]
+}
+
+může nastat i situace:
+2) Mohu mít submodul A2 s parentem ROOT, ale aggregator je A1?
+Ano, technicky to jde. Např.:
+
+Root projekt BPtesting (version = 1.0)
+A1 je child rootu, ale <modules>: <module>A2</module>
+A2 sice fyzicky leží v A1/A2, ale v POMu A2 píšete <parent>…<artifactId>BPtesting</artifactId>…</parent>.
+Maven to sice zkousne, ale:
+
+Pro rekurzivní parser i pro Maven aggregator A1 je “pouze” aggregator – vidí A2 jako submodul, protože <modules> uvádí <module>A2</module>.
+Ovšem A2 si bere <parent> přímo z rootu. Tím (z pohledu A2) je “přeskakována” verze A1.
+Jakmile měníte version rootu, A2 to zdědí (protože A2 se tváří, že root je jeho parent). A1 může mít klidně jinou verzi, a do A2 se to nepropíše.
+V praxi to často vede ke zmatku, protože:
+
+Verze A1 je 1.4, verze rootu 1.1.
+A2 teď říká “můj parent = root version 1.1”.
+Když voláte cd sub-moduleA && mvn install, Maven v reaktoru sestaví i A2, ale “inheritence” je napříč jiným parentem.
+Není to vyloženě chyba, ale bývá to netradiční a hůře udržovatelné.
+
+takže je ROOT ten má submodul (SubA) -> SubA ten má Parent(root) a taky submodul(SubA2) -> SubA2 ten má parent(Root)
+
+co dělá momentálně plugin
+Jestli stačí jen „udělat UI“ k pluginu
+Zadání vašemu nástroji říká, že má usnadnit a automatizovat změny verzí v multi‐module projektů. Samotný plugin versions mnohé věci řeší, ale:
+
+Nemá nativní grafické či REST rozhraní – je to CLI plugin.
+Podpora multi‐module bývá občas zmatená, hlavně když se verze definují v duálních parent–child stromech.
+Zadání zmiňuje i kontrolu konfliktů verzí, zobrazení modulů, atd.
+Takže vaším přínosem může být:
+
+Přehledné UI (REST / GUI), kde uživatel vidí strom modulů, dependencies, verze.
+Jednotlačítková akce “povýšit verzi modulu A2 z 1.0 na 1.1 a zároveň povýšit i v B, pokud B závisí na A2” (propagace).
+Lepší logika detekce konfliktů a zobrazení, co se stalo.
+versions-maven-plugin to sice “umí”, ale jen částečně a v CLI stylu. Vy mu dáváte parametry a z CLI se generuje výstup. Vy pak tu logiku a UI můžete obalit, aby to bylo pro uživatele pohodlné a jasné.
+
+pokud ti něco není jasné zeptej se, a ptej se dříve než budeš něco začínat pokud ti něco není jasné
+
+
+
+
+
+
+
+
+//TODO dalsi chat pro version zmatky v vypisu
+
+
+
+
+{
+  "groupId": "kynicond",
+  "artifactId": "BPtesting",
+  "version": "1.2",
+  "parentGroupId": null,
+  "parentArtifactId": null,
+  "parentVersion": null,
+  "modules": [
+    {
+      "name": "sub-moduleA",
+      "groupId": "kynicond",
+      "artifactId": "BPtesting",
+      "version": "1.2",
+      "parentGroupId": "kynicond",
+      "parentArtifactId": "BPtesting",
+      "parentVersion": "1.2",
+      "pomPath": "/Users/ondrejkynicky/Desktop/BP/BPtesting/sub-moduleA/pom.xml",
+      "submodules": [
+        {
+          "name": "sub-moduleA2",
+          "groupId": "kynicond",
+          "artifactId": "sub-moduleA",
+          "version": "1.5",
+          "parentGroupId": "kynicond",
+          "parentArtifactId": "sub-moduleA",
+          "parentVersion": "1.5",
+          "pomPath": "/Users/ondrejkynicky/Desktop/BP/BPtesting/sub-moduleA/sub-moduleA2/pom.xml",
+          "submodules": [],
+          "dependencies": [
+            {
+              "groupId": "org.apache.commons",
+              "artifactId": "commons-lang3",
+              "version": "3.10"
+            },
+            {
+              "groupId": "org.slf4j",
+              "artifactId": "slf4j-api",
+              "version": "2.0.13"
+            },
+            {
+              "groupId": "org.junit.jupiter",
+              "artifactId": "junit-jupiter",
+              "version": "5.10.2"
+            }
+          ],
+          "dependencyManagement": []
+        }
+      ],
+      "dependencies": [
+        {
+          "groupId": "org.junit.jupiter",
+          "artifactId": "junit-jupiter",
+          "version": "5.10.2"
+        },
+        {
+          "groupId": "org.junit.jupiter",
+          "artifactId": "junit-jupiter-params",
+          "version": "5.10.2"
+        },
+        {
+          "groupId": "org.apache.commons",
+          "artifactId": "commons-lang3",
+          "version": "3.11"
+        }
+      ],
+      "dependencyManagement": [
+        {
+          "groupId": "org.junit.jupiter",
+          "artifactId": "junit-jupiter-params",
+          "version": "5.6.0"
+        },
+        {
+          "groupId": "org.apache.commons",
+          "artifactId": "commons-lang3",
+          "version": "3.5"
+        }
+      ]
+    },
+    {
+      "name": "sub-moduleB",
+      "groupId": "kynicond",
+      "artifactId": "BPtesting",
+      "version": "1.2",
+      "parentGroupId": "kynicond",
+      "parentArtifactId": "BPtesting",
+      "parentVersion": "1.2",
+      "pomPath": "/Users/ondrejkynicky/Desktop/BP/BPtesting/sub-moduleB/pom.xml",
+      "submodules": [],
+      "dependencies": [],
+      "dependencyManagement": []
+    }
+  ],
+  "dependencies": [
+    {
+      "groupId": "org.projectlombok",
+      "artifactId": "lombok",
+      "version": "1.18.30"
+    }
+  ]
+}
+
+super, akorat nechapu proc pri load structure with deps, se ukaze ze submodule A ma starou verzi
+podle me vypisujeme spatnou verzi jen,
+asi vypisujeme verzi z parenta
+a pro version z parenta zas verzi z parenta ale ta je spravne,
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>kynicond</groupId>
+        <artifactId>BPtesting</artifactId>
+        <version>1.2</version>
+    </parent>
+
+    <artifactId>sub-moduleA</artifactId>
+    <version>1.5</version>
+
+    <modules>
+        <module>sub-moduleA2</module>
+    </modules>
+
+    <packaging>pom</packaging>
+
+
+    <properties>
+        <maven.compiler.source>20</maven.compiler.source>
+        <maven.compiler.target>20</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.2</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-params</artifactId>
+            <version>5.10.2</version><!-- TODO ZDE -->
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+            <version>3.11</version>
+        </dependency>
+
+
+    </dependencies>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter-params</artifactId>
+                <version>5.6.0</version>
+                <scope>test</scope>   <!-- TODO ZDE -->
+            </dependency>
+
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-lang3</artifactId>
+                <version>3.5</version>
+            </dependency>
+
+        </dependencies>
+    </dependencyManagement>
+
+<build>
+    <plugins>
+        <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>versions-maven-plugin</artifactId>
+            <version>2.16.2</version>
+        </plugin>
+    </plugins>
+</build>
+
+</project>
+
+ale pritom se spravne verze zmenila jen mala drobnost zmenit je potreba
+
+u submoduluA2 je ale vse spravne zase
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>kynicond</groupId>
+        <artifactId>sub-moduleA</artifactId>
+        <version>1.5</version>
+    </parent>
+
+    <artifactId>sub-moduleA2</artifactId>
+
+    <properties>
+        <maven.compiler.source>20</maven.compiler.source>
+        <maven.compiler.target>20</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+            <version>3.10</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>2.0.13</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.2</version>
+            <scope>test</scope>
+        </dependency>
+
+
+
+    </dependencies>
+
+</project>
+
+a kdyz jsem ted jeste pridal k   <artifactId>sub-moduleA2</artifactId>
+    <version>1442.2</version>
+tak se mi to jen potvrdilo, ze to tam nikde neni
+ale realne kterou verzi ma submodulA mít, 1.2 nebo 1.5???
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>kynicond</groupId>
+        <artifactId>BPtesting</artifactId>
+        <version>1.2</version>
+    </parent>
+
+    <artifactId>sub-moduleA</artifactId>
+    <version>1.5</version>
+
+    <modules>
+        <module>sub-moduleA2</module>
+    </modules>
+
+    <packaging>pom</packaging>
+
+
+    <properties>
+        <maven.compiler.source>20</maven.compiler.source>
+        <maven.compiler.target>20</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.2</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-params</artifactId>
+            <version>5.10.2</version><!-- TODO ZDE -->
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+            <version>3.11</version>
+        </dependency>
+
+
+    </dependencies>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter-params</artifactId>
+                <version>5.6.0</version>
+                <scope>test</scope>   <!-- TODO ZDE -->
+            </dependency>
+
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-lang3</artifactId>
+                <version>3.5</version>
+            </dependency>
+
+        </dependencies>
+    </dependencyManagement>
+
+<build>
+    <plugins>
+        <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>versions-maven-plugin</artifactId>
+            <version>2.16.2</version>
+        </plugin>
+    </plugins>
+</build>
+
+</project>
+

@@ -1,0 +1,19 @@
+ 4. Další doporučení ohledně testování:
+
+Tvá struktura je už dostatečně dobrá pro testování, ale doporučuji přidat modul, který bude mít tranzitivní závislosti:
+
+Modul D závisí na C, C závisí na B, B závisí na A.
+Pokud změníš A, uvidíš, jak se verze propisuje skrze všechny moduly až k D.
+To je ideální test na ověření správné propagace verzí a konfliktů.
+
+
+
+//TODO Newest chat request
+Konkrétně bude vytvořen nástroj, který bude umožňovat snadné povýšení verze jednoho modulu a
+automatickou propagaci této změny do dalších modulů v podobě použitých závislostí. Nástroj také nabídne
+možnost povýšení verze těchto modulů
+je v těchto větách vůbec rozdíl?
+nebo to mám brát jinak
+a to jestli jsou závislosti up to date je celkem v pohodě ještě na dodělání, kvůli tomu že už mám funkci na available versions
+ty conflict momentálně nefungují, ale to doděláme později
+

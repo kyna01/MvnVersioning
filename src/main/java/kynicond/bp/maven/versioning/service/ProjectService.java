@@ -1,10 +1,8 @@
 package kynicond.bp.maven.versioning.service;
 
-import kynicond.bp.maven.versioning.entity.dto.DependencyDTO;
-import kynicond.bp.maven.versioning.entity.dto.ModuleDTO;
-import kynicond.bp.maven.versioning.entity.dto.ProjectDTO;
-import kynicond.bp.maven.versioning.entity.dto.UpdateDependencyRequest;
+import kynicond.bp.maven.versioning.entity.dto.*;
 import org.apache.maven.shared.invoker.*;
+import org.apache.maven.shared.utils.cli.CommandLineException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -97,21 +95,49 @@ public class ProjectService {
 
         ModuleDTO module = new ModuleDTO();
         module.setName(pomFile.getParentFile().getName());
-        module.setArtifactId(getTagValue(root, "artifactId"));
-        module.setGroupId(getTagValue(root, "groupId"));
-        module.setVersion(getTagValue(root, "version"));
-
         module.setPomPath(pomFile.getAbsolutePath());
 
+        NodeList parentNodes = root.getElementsByTagName("parent");
+        if (parentNodes.getLength() > 0) {
+            Element parentEl = (Element) parentNodes.item(0);
+            module.setParentGroupId(getTagValue(parentEl, "groupId"));
+            module.setParentArtifactId(getTagValue(parentEl, "artifactId"));
+            module.setParentVersion(getTagValue(parentEl, "version"));
+        }
+//
+//        // ArtifactId (musí být vždy uvedeno)
+//        String artifactId = getTagValue(root, "artifactId");
+//        module.setArtifactId(artifactId);
+//
+//        // GroupId (může se zdědit z parenta)
+//        String groupId = getTagValue(root, "groupId");
+//        if (groupId == null || groupId.isEmpty()) {
+//            groupId = module.getParentGroupId();
+//        }
+//        module.setGroupId(groupId);
+//
+//        // Version (může se zdědit z parenta)
+//        String version = getTagValue(root, "version");
+//        if (version == null || version.isEmpty()) {
+//            version = module.getParentVersion();
+//        }
+//        module.setVersion(version);
+
+        String artifactId = getDirectChildTagValue(root, "artifactId");
+        String groupId = getDirectChildTagValue(root, "groupId");
+        String version = getDirectChildTagValue(root, "version");
+
+        module.setArtifactId(artifactId);
+        module.setGroupId(groupId);
+        module.setVersion(version);
 
 
         if (includeDependencies) {
-            List<DependencyDTO> dependencies = loadDependencies(root);
-            module.setDependencies(dependencies);
+            module.setDependencies(loadDependencies(root));
+            module.setDependencyManagement(loadDependencyManagement(root));
         } else {
             module.setDependencies(new ArrayList<>());
         }
-
 
         NodeList moduleNodes = root.getElementsByTagName("module");
         List<ModuleDTO> submodules = new ArrayList<>();
@@ -130,14 +156,62 @@ public class ProjectService {
         return module;
     }
 
+    private String getDirectChildTagValue(Element root, String tagName) {
+        NodeList children = root.getChildNodes();
+        for (int i=0; i<children.getLength(); i++) {
+            Node n = children.item(i);
+            if (n.getNodeType() == Node.ELEMENT_NODE && n.getNodeName().equals(tagName)) {
+                return n.getTextContent().trim();
+            }
+        }
+        return "";
+    }
+
+
     private List<DependencyDTO> loadDependencies(Element root) {
-        List<DependencyDTO> dependencies = new ArrayList<>();
+        List<DependencyDTO> result = new ArrayList<>();
 
-        NodeList dependencyNodes = root.getElementsByTagName("dependency");
+        NodeList dependenciesAll = root.getElementsByTagName("dependencies");
 
-        for (int i = 0; i < dependencyNodes.getLength(); i++) {
-            Node node = dependencyNodes.item(i);
-            if (node.getNodeType() == Node.ELEMENT_NODE) {
+        for (int i = 0; i < dependenciesAll.getLength(); i++) {
+            Element depsEl =  (Element) dependenciesAll.item(i);
+
+            Node parent = depsEl.getParentNode();
+            if (parent != null && "dependencyManagement".equals(parent.getNodeName())) {
+                continue;
+            }
+
+
+            NodeList depNodes = depsEl.getElementsByTagName("dependency");
+            for (int j = 0; j < depNodes.getLength(); j++) {
+                Element depEl = (Element) depNodes.item(j);
+
+                DependencyDTO dep = new DependencyDTO();
+                dep.setGroupId(getTagValue(depEl, "groupId"));
+                dep.setArtifactId(getTagValue(depEl, "artifactId"));
+                dep.setVersion(getTagValue(depEl, "version"));
+                result.add(dep);
+            }
+        }
+
+        return result;
+    }
+
+    private List<DependencyDTO> loadDependencyManagement(Element root){
+        List<DependencyDTO> dmDeps = new ArrayList<>();
+
+        NodeList dmNodes = root.getElementsByTagName("dependencyManagement");
+        if (dmNodes.getLength() == 0){
+            return dmDeps;
+        }
+
+        Element dmElement = (Element) dmNodes.item(0);
+
+        NodeList dependencies = dmElement.getElementsByTagName("dependency");
+
+        for (int i = 0; i < dependencies.getLength(); i++){
+            Node node = dependencies.item(i);
+            if (node.getNodeType() == Node.ELEMENT_NODE){
                 Element depElement = (Element) node;
 
                 DependencyDTO dep = new DependencyDTO();
@@ -145,12 +219,16 @@ public class ProjectService {
                 dep.setArtifactId(getTagValue(depElement, "artifactId"));
                 dep.setVersion(getTagValue(depElement, "version"));
 
-                dependencies.add(dep);
+                dmDeps.add(dep);
             }
         }
 
-        return dependencies;
+        return dmDeps;
     }
+
+
+
+
     private ModuleDTO cleanForStructure(ModuleDTO original) {
         ModuleDTO cleaned = new ModuleDTO();
         cleaned.setName(original.getName());
@@ -179,12 +257,6 @@ public class ProjectService {
 
 
 
-
-
-
-
-
-
     //-------------------------------Update-------------------------------
     public List<String> updateDependencyVersion(UpdateDependencyRequest request) throws Exception {
         if (projectRootPomPath == null || loadedProject == null) {
@@ -203,9 +275,12 @@ public class ProjectService {
 
         invocationRequest.setGoals(List.of(
                 "versions:use-dep-version",
+                "-N",
                 "-Dincludes=" + request.getGroupId() + ":" + request.getArtifactId(),
                 "-DdepVersion=" + request.getNewVersion(),
-                "-DforceVersion=true"
+                "-DforceVersion=true",
+                "-DprocessDependencies=true",
+                "-DprocessDependencyManagement=false"
         ));
 
         Invoker invoker = new DefaultInvoker();
@@ -250,83 +325,61 @@ public class ProjectService {
 
 
 
+    public List<String> updateDependencyManagementVersion(UpdateDependencyRequest request) throws Exception {
+        if (projectRootPomPath == null || loadedProject == null) {
+            throw new IllegalStateException("Projekt není načten nebo není dostupný strom modulů.");
+        }
+
+        ModuleDTO module = findModuleByName(request.getModuleName(), loadedProject.getModules());
+        if (module == null || module.getPomPath() == null) {
+            throw new FileNotFoundException("Nepodařilo se najít pom.xml pro modul: " + request.getModuleName());
+        }
+
+        File modulePomFile = new File(module.getPomPath());
+
+        InvocationRequest invocationRequest = new DefaultInvocationRequest();
+        invocationRequest.setPomFile(modulePomFile);
+
+        invocationRequest.setGoals(List.of(
+                "versions:use-dep-version",
+                "-N",
+                "-Dincludes=" + request.getGroupId() + ":" + request.getArtifactId(),
+                "-DdepVersion=" + request.getNewVersion(),
+                "-DforceVersion=true",
+                "-DprocessDependencies=false",
+                "-DprocessDependencyManagement=true"
+        ));
+
+        Invoker invoker = new DefaultInvoker();
+
+        invoker.setMavenHome(new File("/usr/local/Cellar/maven/3.9.6/libexec"));
+        invoker.setOutputHandler(System.out::println);
+        invoker.setErrorHandler(System.err::println);
+
+        InvocationResult result = invoker.execute(invocationRequest);
+        if (result.getExitCode() != 0){
+            throw new RuntimeException("Maven příkaz selhal." + result.getExecutionException());
+        }
+
+
+
+
+
+        List<String> versionConflictWarnings = detectGlobalConflicts(request);
+
+        if (!versionConflictWarnings.isEmpty()) {
+            throw new RuntimeException("Nekompatibilní verze:\n" + String.join("\n", versionConflictWarnings));
+        }
+
+        return versionConflictWarnings;
+
+    }
+
+
+
 
     //-----------------------------Conflicts----------------------------
 
-
-
-//    public List<String> checkDependencyConflicts() throws Exception {
-//        String pomPath = getProjectPomPath();
-//        if (pomPath == null) {
-//            throw new FileNotFoundException("Projekt není načten.");
-//        }
-//
-//        File pomFile = new File(pomPath);
-//        File parentDir = pomFile.getParentFile();
-//        File outputFile = new File(parentDir, "deps.txt");
-//
-//        InvocationRequest request = new DefaultInvocationRequest();
-//        request.setPomFile(pomFile);
-//        request.setGoals(List.of(
-//                "validate",
-//                "dependency:tree",
-//                "-DoutputFile=" + outputFile.getAbsolutePath(),
-//                "-DoutputType=text"
-//        ));
-//
-//        StringBuilder outputLog = new StringBuilder();
-//        Invoker invoker = new DefaultInvoker();
-//        invoker.setMavenHome(new File("/usr/local/Cellar/maven/3.9.6/libexec"));
-//        invoker.setOutputHandler(outputLog::append);
-//        invoker.setErrorHandler(outputLog::append);
-//
-//        InvocationResult result = invoker.execute(request);
-//        if (result.getExitCode() != 0) {
-//            throw new RuntimeException("Nepodařilo se získat strom závislostí.");
-//        }
-//
-//        List<String> conflicts = new ArrayList<>();
-//        List<String> treeLines = List.of(outputLog.toString().split("\n"));
-//
-//        for (String line : treeLines) {
-//            if (line.contains("must be unique") || line.contains("conflict") || line.contains("multiple versions")) {
-//                conflicts.add("Konflikt: " + line.trim());
-//            }
-//        }
-//
-//        Map<String, String> expectedTransitives = new HashMap<>();
-//        for (String line : treeLines) {
-//            if (line.contains("->") && line.contains(":jar:")) {
-//                String[] parts = line.trim().split("->");
-//                if (parts.length == 2) {
-//                    String[] artifactParts = parts[1].trim().split(":");
-//                    if (artifactParts.length >= 4) {
-//                        String key = artifactParts[0] + ":" + artifactParts[1];
-//                        String version = artifactParts[3];
-//                        expectedTransitives.putIfAbsent(key, version);
-//                    }
-//                }
-//            }
-//        }
-//
-//        for (String line : treeLines) {
-//            for (Map.Entry<String, String> entry : expectedTransitives.entrySet()) {
-//                String gav = entry.getKey();
-//                String expectedVersion = entry.getValue();
-//                if (line.contains(gav) && line.contains(":jar:") && !line.contains("->")) {
-//                    String[] parts = line.trim().split(":");
-//                    if (parts.length >= 4) {
-//                        String actualVersion = parts[3];
-//                        if (!actualVersion.equals(expectedVersion)) {
-//                            conflicts.add(" Závislost " + gav + " očekává verzi " + expectedVersion + ", ale nalezena verze " + actualVersion);
-//                        }
-//                    }
-//                }
-//            }
-//        }
-//
-//        return conflicts;
-//    }
 
 
     private List<ModuleDTO> flattenModules(List<ModuleDTO> modules) {
@@ -395,6 +448,8 @@ public class ProjectService {
     }
 
 
+
+
     private List<String> analyzeAllVerboseConflicts(File verboseFile) throws IOException {
         List<String> lines = Files.readAllLines(verboseFile.toPath());
         List<String> conflicts = new ArrayList<>();
@@ -432,61 +487,10 @@ public class ProjectService {
 
 
 
-//    public List<String> detectOverriddenTransitiveConflicts(UpdateDependencyRequest request, String modulePomPath) throws Exception {
-//        File pomFile = new File(modulePomPath);
-//        File parentDir = pomFile.getParentFile();
-//        File dotFile = new File(parentDir, "deps.dot");
-//
-//        InvocationRequest treeRequest = new DefaultInvocationRequest();
-//        treeRequest.setPomFile(pomFile);
-//        treeRequest.setGoals(List.of(
-//                "dependency:tree",
-//                "-DoutputType=dot",
-//                "-DoutputFile=" + dotFile.getAbsolutePath()
-//        ));
-//
-//        Invoker invoker = new DefaultInvoker();
-//        invoker.setMavenHome(new File("/usr/local/Cellar/maven/3.9.6/libexec"));
-//        treeRequest.setBatchMode(true);
-//        InvocationResult result = invoker.execute(treeRequest);
-//        if (result.getExitCode() != 0) {
-//            throw new RuntimeException("Nepodařilo se získat strom závislostí.");
-//        }
-//
-//        List<String> warnings = new ArrayList<>();
-//        List<String> lines = java.nio.file.Files.readAllLines(dotFile.toPath());
-//
-//        String targetDependencyKey = request.getGroupId() + ":" + request.getArtifactId();
-//        String requestedVersion = request.getNewVersion();
-//
-//        for (String line : lines) {
-//            if (line.contains("->")) {
-//                String[] parts = line.split("->");
-//                if (parts.length == 2) {
-//                    String from = parts[0].replace("\"", "").trim();
-//                    String to = parts[1].replace("\"", "").trim();
-//
-//                    String[] toParts = to.split(":");
-//                    if (toParts.length >= 3) {
-//                        String toGroupArtifact = toParts[0] + ":" + toParts[1];
-//                        String toVersion = toParts[2];
-//
-//                        // Zajímají tě jen situace, kdy tranzitivní verze je vyšší, než tebou nastavená.
-//                        if (toGroupArtifact.equals(targetDependencyKey)) {
-//                            if (isVersionHigher(toVersion, requestedVersion)) {
-//                                warnings.add("Závislost " + from + " očekává " + targetDependencyKey + ":" + toVersion +
-//                                        ", ale ty jsi nastavil nižší verzi: " + requestedVersion);
-//                            }
-//                        }
-//                    }
-//                }
-//            }
-//        }
-//
-//        return warnings;
-//    }
-//
-//
+
+
+
+
 
 
     public List<String> detectGlobalConflicts(UpdateDependencyRequest request) throws Exception {
@@ -534,8 +538,6 @@ public class ProjectService {
     }
 
 
-
-// ...
 
     private List<String> analyzeVerboseTree(File verboseFile, UpdateDependencyRequest request) throws IOException {
         List<String> lines = Files.readAllLines(verboseFile.toPath());
@@ -586,47 +588,18 @@ public class ProjectService {
     }
 
 
-//
-//    private String extractVersion(String line, String depKey) {
-//        String[] parts = line.split(depKey + ":");
-//        if (parts.length > 1) {
-//            String versionPart = parts[1];
-//            String version = versionPart.split(":")[1];
-//            return version.trim();
-//        }
-//        return "unknown";
-//    }
-//
-//
-//
-//    public List<String> detectVersionConflictsVerbose(File modulePomFile, UpdateDependencyRequest request) throws Exception {
-//        File outputFile = new File(modulePomFile.getParentFile(), "deps_verbose.txt");
-//
-//        InvocationRequest verboseTreeRequest = new DefaultInvocationRequest();
-//        verboseTreeRequest.setPomFile(modulePomFile);
-//        verboseTreeRequest.setGoals(List.of(
-//                "dependency:tree",
-//                "-Dverbose=true",
-//                "-DoutputFile=" + outputFile.getAbsolutePath()
-//        ));
-//
-//        Invoker invoker = new DefaultInvoker();
-//        invoker.setMavenHome(new File("/usr/local/Cellar/maven/3.9.6/libexec"));
-//        verboseTreeRequest.setBatchMode(true);
-//        InvocationResult result = invoker.execute(verboseTreeRequest);
-//        if (result.getExitCode() != 0) {
-//            throw new RuntimeException("Nepodařilo se získat strom závislostí (verbose).");
-//        }
-//
-//        return analyzeVerboseTree(outputFile, request);
-//    }
-//
-//
-//
-//
+
+
+
+
 
 
     //-------------------------------Versions-------------------------------
+
+
+
+
+
 
 
 
@@ -661,6 +634,130 @@ public class ProjectService {
         }
 
         return versions;
+    }
+
+
+
+
+    // todo UpdateModuleRequest
+
+    public List<String> updateModuleVersion(UpdateModuleRequest request) throws Exception {
+        if (projectRootPomPath == null || loadedProject == null) {
+            throw new IllegalStateException("Projekt není načten nebo není dostupný strom modulů.");
+        }
+
+        ModuleDTO module = findModuleByName(request.getModuleName(), loadedProject.getModules());
+        if (module == null || module.getPomPath() == null) {
+            throw new FileNotFoundException("Nepodařilo se najít pom.xml pro modul: " + request.getModuleName());
+        }
+
+        File modulePomFile = new File(module.getPomPath());
+
+        InvocationRequest invocationRequest = new DefaultInvocationRequest();
+        invocationRequest.setPomFile(modulePomFile);
+
+        invocationRequest.setGoals(List.of(
+                "versions:set",
+                "-DnewVersion=" + request.getNewVersion(),
+                "-DgenerateBackupPoms=false"
+        ));
+
+        Invoker invoker = new DefaultInvoker();
+        invoker.setMavenHome(new File("/usr/local/Cellar/maven/3.9.6/libexec"));
+        invoker.setOutputHandler(System.out::println);
+        invoker.setErrorHandler(System.err::println);
+
+        InvocationResult result = invoker.execute(invocationRequest);
+        if (result.getExitCode() != 0) {
+            throw new RuntimeException("Maven příkaz pro změnu verze modulu selhal." +
+                    result.getExecutionException());
+        }
+
+        // Volitelně můžeme spustit další cíl pro update child modulů:
+        // Například:
+        InvocationRequest childUpdateRequest = new DefaultInvocationRequest();
+        childUpdateRequest.setPomFile(modulePomFile);
+        childUpdateRequest.setGoals(List.of("versions:update-child-modules"));
+        InvocationResult childResult = invoker.execute(childUpdateRequest);
+        if (childResult.getExitCode() != 0) {
+            throw new RuntimeException("Maven příkaz pro update child modulů selhal." +
+                    childResult.getExecutionException());
+        }
+
+
+        versionToDependenciesUpdate(request.getGroupId(),request.getModuleName(),request.getNewVersion());
+
+
+
+        List<String> conflicts = checkAllModulesConflicts();
+        return conflicts;
+    }
+
+
+
+
+    private void versionToDependenciesUpdate(String groupId, String artifactId, String newVersion) throws Exception {
+        List<ModuleDTO> allModules = flattenModules(loadedProject.getModules());
+
+        for (ModuleDTO module : allModules) {
+            if (module.getArtifactId().equals(artifactId) && module.getGroupId().equals(groupId)) {
+                continue;
+            }
+
+            File pomFile = new File(module.getPomPath());
+
+            InvocationRequest request = new DefaultInvocationRequest();
+            request.setPomFile(pomFile);
+            request.setGoals(List.of(
+                    "versions:use-dep-version",
+                    "-Dincludes=" + groupId + ":" + artifactId,
+                    "-DdepVersion=" + newVersion,
+                    "-DforceVersion=true",
+                    "-DgenerateBackupPoms=false",
+                    "-DprocessDependencies=true",
+                    "-DprocessDependencyManagement=false"
+            ));
+
+            Invoker invoker = new DefaultInvoker();
+            invoker.setMavenHome(new File("/usr/local/Cellar/maven/3.9.6/libexec"));
+            invoker.setOutputHandler(System.out::println);
+            System.out.println("=====Errors=====");
+            invoker.setErrorHandler(System.out::println);
+
+            InvocationResult invocationResult = invoker.execute(request);
+
+            if (invocationResult.getExitCode() != 0){
+                System.out.println("Nepodařilo se aktualizovat zzávislosti v modulu" + module.getName());
+            }
+            else {
+                System.out.println("Úspěšně se podařilo aktualizovat závislosti v modulu" + module.getName());
+            }
+
+
+        }
+    }
+
+    public void compileProject() throws Exception {
+
+        if (projectRootPomPath == null)
+        {
+            throw new IllegalStateException("Projekt není načten.");
+        }
+        InvocationRequest invocationRequest = new DefaultInvocationRequest();
+        invocationRequest.setPomFile(new File(projectRootPomPath));
+        invocationRequest.setGoals(List.of("clean", "install"));
+
+
+        Invoker invoker = new DefaultInvoker();
+        invoker.setMavenHome(new File("/usr/local/Cellar/maven/3.9.6/libexec"));
+
+        InvocationResult result = invoker.execute(invocationRequest);
+
+        if (result.getExitCode() != 0)
+        {
+            throw new RuntimeException("Maven příkaz clean compile selhal: " + result.getExecutionException());
+        }
+
     }
 
 }

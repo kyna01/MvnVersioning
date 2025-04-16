@@ -1,0 +1,209 @@
+{
+  "groupId": "kynicond",
+  "artifactId": "BPtesting",
+  "version": "1.2",
+  "parentGroupId": null,
+  "parentArtifactId": null,
+  "parentVersion": null,
+  "modules": [
+    {
+      "name": "sub-moduleA",
+      "groupId": "",
+      "artifactId": "sub-moduleA",
+      "version": "1.8.1",
+      "parentGroupId": "kynicond",
+      "parentArtifactId": "BPtesting",
+      "parentVersion": "1.2",
+      "pomPath": "/Users/ondrejkynicky/Desktop/BP/BPtesting/sub-moduleA/pom.xml",
+      "submodules": [
+        {
+          "name": "sub-moduleA2",
+          "groupId": "",
+          "artifactId": "sub-moduleA2",
+          "version": "13.2",
+          "parentGroupId": "kynicond",
+          "parentArtifactId": "sub-moduleA",
+          "parentVersion": "1.8.1",
+          "pomPath": "/Users/ondrejkynicky/Desktop/BP/BPtesting/sub-moduleA/sub-moduleA2/pom.xml",
+          "submodules": [],
+          "dependencies": [
+            {
+              "groupId": "org.apache.commons",
+              "artifactId": "commons-lang3",
+              "version": "3.10"
+            },
+            {
+              "groupId": "org.slf4j",
+              "artifactId": "slf4j-api",
+              "version": "2.0.13"
+            },
+            {
+              "groupId": "org.junit.jupiter",
+              "artifactId": "junit-jupiter",
+              "version": "5.10.2"
+            }
+          ],
+          "dependencyManagement": []
+        },
+        {
+          "name": "sub-moduleA2.5",
+          "groupId": "",
+          "artifactId": "sub-moduleA2.5",
+          "version": "",
+          "parentGroupId": "kynicond",
+          "parentArtifactId": "sub-moduleA",
+          "parentVersion": "1.8.1",
+          "pomPath": "/Users/ondrejkynicky/Desktop/BP/BPtesting/sub-moduleA/sub-moduleA2.5/pom.xml",
+          "submodules": [],
+          "dependencies": [
+            {
+              "groupId": "kynicond",
+              "artifactId": "sub-moduleA",
+              "version": "1.8.1"
+            }
+          ],
+          "dependencyManagement": []
+        }
+      ],
+      "dependencies": [
+        {
+          "groupId": "org.junit.jupiter",
+          "artifactId": "junit-jupiter",
+          "version": "5.10.2"
+        },
+        {
+          "groupId": "org.junit.jupiter",
+          "artifactId": "junit-jupiter-params",
+          "version": "5.10.2"
+        },
+        {
+          "groupId": "org.apache.commons",
+          "artifactId": "commons-lang3",
+          "version": "3.11"
+        }
+      ],
+      "dependencyManagement": [
+        {
+          "groupId": "org.junit.jupiter",
+          "artifactId": "junit-jupiter-params",
+          "version": "5.6.0"
+        },
+        {
+          "groupId": "org.apache.commons",
+          "artifactId": "commons-lang3",
+          "version": "3.5"
+        }
+      ]
+    },
+    {
+      "name": "sub-moduleB",
+      "groupId": "",
+      "artifactId": "sub-moduleB",
+      "version": "",
+      "parentGroupId": "kynicond",
+      "parentArtifactId": "BPtesting",
+      "parentVersion": "1.2",
+      "pomPath": "/Users/ondrejkynicky/Desktop/BP/BPtesting/sub-moduleB/pom.xml",
+      "submodules": [],
+      "dependencies": [
+        {
+          "groupId": "kynicond",
+          "artifactId": "sub-moduleA",
+          "version": "1.8.1"
+        }
+      ],
+      "dependencyManagement": []
+    },
+    {
+      "name": "sub-moduleC",
+      "groupId": "",
+      "artifactId": "sub-moduleC",
+      "version": "",
+      "parentGroupId": "kynicond",
+      "parentArtifactId": "BPtesting",
+      "parentVersion": "1.2",
+      "pomPath": "/Users/ondrejkynicky/Desktop/BP/BPtesting/sub-moduleC/pom.xml",
+      "submodules": [
+        {
+          "name": "sub-moduleC2",
+          "groupId": "org.example",
+          "artifactId": "sub-moduleC2",
+          "version": "",
+          "parentGroupId": "kynicond",
+          "parentArtifactId": "sub-moduleC",
+          "parentVersion": "1.2",
+          "pomPath": "/Users/ondrejkynicky/Desktop/BP/BPtesting/sub-moduleC/sub-moduleC2/pom.xml",
+          "submodules": [
+            {
+              "name": "sub-moduleC3",
+              "groupId": "",
+              "artifactId": "sub-moduleC3",
+              "version": "",
+              "parentGroupId": "org.example",
+              "parentArtifactId": "sub-moduleC2",
+              "parentVersion": "1.2",
+              "pomPath": "/Users/ondrejkynicky/Desktop/BP/BPtesting/sub-moduleC/sub-moduleC2/sub-moduleC3/pom.xml",
+              "submodules": [],
+              "dependencies": [],
+              "dependencyManagement": [
+                {
+                  "groupId": "kynicond",
+                  "artifactId": "sub-moduleA",
+                  "version": "1.8.1"
+                }
+              ]
+            }
+          ],
+          "dependencies": [
+            {
+              "groupId": "kynicond",
+              "artifactId": "sub-moduleA",
+              "version": "1.8.1"
+            }
+          ],
+          "dependencyManagement": []
+        },
+        {
+          "name": "sub-moduleC4",
+          "groupId": "",
+          "artifactId": "sub-moduleC4",
+          "version": "",
+          "parentGroupId": "kynicond",
+          "parentArtifactId": "sub-moduleC",
+          "parentVersion": "1.2",
+          "pomPath": "/Users/ondrejkynicky/Desktop/BP/BPtesting/sub-moduleC/sub-moduleC4/pom.xml",
+          "submodules": [],
+          "dependencies": [],
+          "dependencyManagement": [
+            {
+              "groupId": "kynicond",
+              "artifactId": "sub-moduleA",
+              "version": "1.8.1"
+            }
+          ]
+        }
+      ],
+      "dependencies": [
+        {
+          "groupId": "kynicond",
+          "artifactId": "sub-moduleA",
+          "version": "1.8.1"
+        }
+      ],
+      "dependencyManagement": [
+        {
+          "groupId": "kynicond",
+          "artifactId": "sub-moduleA",
+          "version": "1.8.1"
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "groupId": "org.projectlombok",
+      "artifactId": "lombok",
+      "version": "1.18.30"
+    }
+  ]
+}
