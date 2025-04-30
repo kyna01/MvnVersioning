@@ -1,0 +1,11 @@
+kynicond/bp/maven/versioning/controller/ProjectController.class
+kynicond/bp/maven/versioning/Application.class
+kynicond/bp/maven/versioning/entity/dto/UpdateDependencyRequest.class
+kynicond/bp/maven/versioning/entity/dto/DependencyDTO.class
+kynicond/bp/maven/versioning/entity/dto/UpdateModuleRequest.class
+kynicond/bp/maven/versioning/entity/dto/LoadProjectRequest.class
+kynicond/bp/maven/versioning/entity/dto/ProjectDTO.class
+kynicond/bp/maven/versioning/service/ProjectService.class
+kynicond/bp/maven/versioning/entity/dto/ModuleDTO.class
+kynicond/bp/maven/versioning/entity/dto/OutdatedModuleRef.class
+kynicond/bp/maven/versioning/entity/dto/OutdatedModuleRef$Location.class

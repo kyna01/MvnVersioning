@@ -14,4 +14,5 @@ public class ProjectDTO {
     private String parentVersion;
     private List<ModuleDTO> modules;
     private List<DependencyDTO> dependencies;
+    private List<DependencyDTO> dependencyManagement;
 }

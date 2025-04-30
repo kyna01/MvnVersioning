@@ -9,5 +9,3 @@ public class UpdateModuleRequest {
     private String newVersion;
 }
 
-
-//TODO zde pridano na update modulu

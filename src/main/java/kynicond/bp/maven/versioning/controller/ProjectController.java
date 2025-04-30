@@ -8,10 +8,12 @@ import kynicond.bp.maven.versioning.entity.dto.ProjectDTO;
 import kynicond.bp.maven.versioning.entity.dto.UpdateDependencyRequest;
 import kynicond.bp.maven.versioning.entity.dto.UpdateModuleRequest;
 import kynicond.bp.maven.versioning.service.ProjectService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/project")
@@ -72,7 +74,7 @@ public class ProjectController {
         }
     }
 
-    @Operation(summary = "Aktualizuje verzi konkrétní dependency v dependencyManagementu modulu")
+    @Operation(summary = "Aktualizuje verzi konkrétní dependency v dependencyManagementu")
     @PostMapping("/update-dependencyManagement-version")
     public ResponseEntity<?> updateDependencyManagementRequest(@RequestBody UpdateDependencyRequest updateDependencyRequest) {
         try {
@@ -101,21 +103,20 @@ public class ProjectController {
         }
     }
 
+//TODO přidat funkci na konflikty
 
-    @Operation(summary = "Zkontroluje konflikty závislostí v projektu")
-    @GetMapping("/check-dependency-conflicts")
-    public ResponseEntity<List<String>> checkConflicts() {
-        try {
-            List<String> conflicts = projectService.checkAllModulesConflicts();
-            return ResponseEntity.ok(conflicts);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return ResponseEntity.badRequest().build();
-        }
-    }
+//    @Operation(summary = "Zkontroluje konflikty závislostí v projektu")
+//    @GetMapping("/check-dependency-conflicts")
+//    public ResponseEntity<List<String>> checkConflicts() {
+//        try {
+//            List<String> conflicts = projectService.checkAllModulesConflicts();
+//            return ResponseEntity.ok(conflicts);
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//            return ResponseEntity.badRequest().build();
+//        }
+//    }
 
-
-    // TODO moduly
 
     @Operation(summary = "Aktualizuje verzi modulu (změní hodnotu elementu <version> POMu)")
     @PostMapping("/update-module-version")
@@ -149,6 +150,43 @@ public ResponseEntity<?> compileProject(){
         }
 
 }
+
+
+
+    @GetMapping("/dependencies/outdated")
+    public ResponseEntity<List<String>> listOutdated() throws Exception {
+        try {
+            List<String> outdated = projectService.listOutdatedDependencies_MavenCentral();
+            return ResponseEntity.ok(outdated);
+        }catch (Exception e){
+            e.printStackTrace();
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+
+    @GetMapping("/modules/outdated")
+    public ResponseEntity<List<String>> listOutdatedModules() {
+        try {
+            return ResponseEntity.ok(projectService.listOutdatedModuleReferences());
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+
+    @PostMapping("/modules/fix-outdated")
+    public ResponseEntity<?> fixOutdatedModules() throws Exception {
+        List<String> fails = projectService.fixOutdatedRefs();
+        try {
+            return ResponseEntity.ok("Všechny outdated moduly byly aktualizované");
+        } catch (Exception ex){
+            ex.printStackTrace();
+            return ResponseEntity.badRequest().body(ex.getMessage());
+        }
+    }
+
 
 
 }

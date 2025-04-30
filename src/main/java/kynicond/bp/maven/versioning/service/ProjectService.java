@@ -1,6 +1,7 @@
 package kynicond.bp.maven.versioning.service;
 
 import kynicond.bp.maven.versioning.entity.dto.*;
+import org.apache.maven.artifact.versioning.ComparableVersion;
 import org.apache.maven.shared.invoker.*;
 import org.apache.maven.shared.utils.cli.CommandLineException;
 import org.springframework.stereotype.Service;
@@ -32,13 +33,13 @@ public class ProjectService {
     private ProjectDTO loadedProject;
 
 
-    public void resetProject() {
-        this.projectRootPomPath = null;
-    }
-
-    public String getProjectPomPath() {
-        return this.projectRootPomPath;
-    }
+//    public void resetProject() {
+//        this.projectRootPomPath = null;
+//    }
+//
+//    public String getProjectPomPath() {
+//        return this.projectRootPomPath;
+//    }
 
     public ProjectDTO loadStructureOnly(String pomPath) throws Exception {
         File pomFile = new File(pomPath);
@@ -104,24 +105,6 @@ public class ProjectService {
             module.setParentArtifactId(getTagValue(parentEl, "artifactId"));
             module.setParentVersion(getTagValue(parentEl, "version"));
         }
-//
-//        // ArtifactId (musí být vždy uvedeno)
-//        String artifactId = getTagValue(root, "artifactId");
-//        module.setArtifactId(artifactId);
-//
-//        // GroupId (může se zdědit z parenta)
-//        String groupId = getTagValue(root, "groupId");
-//        if (groupId == null || groupId.isEmpty()) {
-//            groupId = module.getParentGroupId();
-//        }
-//        module.setGroupId(groupId);
-//
-//        // Version (může se zdědit z parenta)
-//        String version = getTagValue(root, "version");
-//        if (version == null || version.isEmpty()) {
-//            version = module.getParentVersion();
-//        }
-//        module.setVersion(version);
 
         String artifactId = getDirectChildTagValue(root, "artifactId");
         String groupId = getDirectChildTagValue(root, "groupId");
@@ -137,6 +120,7 @@ public class ProjectService {
             module.setDependencyManagement(loadDependencyManagement(root));
         } else {
             module.setDependencies(new ArrayList<>());
+            module.setDependencyManagement(new ArrayList<>());
         }
 
         NodeList moduleNodes = root.getElementsByTagName("module");
@@ -227,8 +211,6 @@ public class ProjectService {
     }
 
 
-
-
     private ModuleDTO cleanForStructure(ModuleDTO original) {
         ModuleDTO cleaned = new ModuleDTO();
         cleaned.setName(original.getName());
@@ -285,7 +267,11 @@ public class ProjectService {
 
         Invoker invoker = new DefaultInvoker();
 
-        invoker.setMavenHome(new File("/usr/local/Cellar/maven/3.9.6/libexec"));
+        String mavenHome = System.getenv("MAVEN_HOME");
+        if (mavenHome == null) {
+            throw new IllegalStateException("Systémová proměnná MAVEN_HOME není nastavena. Nastav ji na cestu ke tvému Maven adresáři.");
+        }
+        invoker.setMavenHome(new File(mavenHome));
         invoker.setOutputHandler(System.out::println);
         invoker.setErrorHandler(System.err::println);
 
@@ -295,10 +281,9 @@ public class ProjectService {
         }
 
 
+        //TODO conflicts
 
-
-
-        List<String> versionConflictWarnings = detectGlobalConflicts(request);
+        List<String> versionConflictWarnings = new ArrayList<>(); // rozšíření
 
         if (!versionConflictWarnings.isEmpty()) {
             throw new RuntimeException("Nekompatibilní verze:\n" + String.join("\n", versionConflictWarnings));
@@ -307,6 +292,10 @@ public class ProjectService {
         return versionConflictWarnings;
 
     }
+
+
+
+
 
     private ModuleDTO findModuleByName(String name, List<ModuleDTO> modules) {
         for (ModuleDTO module : modules) {
@@ -320,7 +309,6 @@ public class ProjectService {
         }
         return null;
     }
-
 
 
 
@@ -352,7 +340,12 @@ public class ProjectService {
 
         Invoker invoker = new DefaultInvoker();
 
-        invoker.setMavenHome(new File("/usr/local/Cellar/maven/3.9.6/libexec"));
+        String mavenHome = System.getenv("MAVEN_HOME");
+        if (mavenHome == null) {
+            throw new IllegalStateException("Systémová proměnná MAVEN_HOME není nastavena. Nastav ji na cestu ke tvému Maven adresáři.");
+        }
+        invoker.setMavenHome(new File(mavenHome));
+
         invoker.setOutputHandler(System.out::println);
         invoker.setErrorHandler(System.err::println);
 
@@ -364,8 +357,8 @@ public class ProjectService {
 
 
 
-
-        List<String> versionConflictWarnings = detectGlobalConflicts(request);
+        // TODO conflicts
+        List<String> versionConflictWarnings = new ArrayList<>(); // rozšíření
 
         if (!versionConflictWarnings.isEmpty()) {
             throw new RuntimeException("Nekompatibilní verze:\n" + String.join("\n", versionConflictWarnings));
@@ -378,7 +371,7 @@ public class ProjectService {
 
 
 
-    //-----------------------------Conflicts----------------------------
+
 
 
 
@@ -394,129 +387,15 @@ public class ProjectService {
     }
 
 
-    /**
-     * Projde všechny moduly (rekurzivně) a pro každý spustí dependency:tree -Dverbose.
-     * Z každého výstupu vyparsuje omitnuté konflikty a sloučí je do jednoho seznamu.
-     */
+    //-----------------------------Conflicts----------------------------
+
+    //TODO funkce na konflikty
     public List<String> checkAllModulesConflicts() throws Exception {
-        if (loadedProject == null || loadedProject.getModules() == null) {
-            throw new IllegalStateException("Projekt nebo seznam modulů není načten.");
-        }
-
-        List<String> allConflicts = new ArrayList<>();
-
-        // 1) Získáme plochý seznam všech modulů (včetně submodulů).
-        List<ModuleDTO> allModules = flattenModules(loadedProject.getModules());
-
-        // 2) Pro každý modul spustíme "dependency:tree -Dverbose"
-        for (ModuleDTO module : allModules) {
-            File pomFile = new File(module.getPomPath());
-            if (!pomFile.exists()) {
-                // Kdyby náhodou modul neměl POM
-                continue;
-            }
-
-            // Vytvoříme unikátní jméno výstupního souboru pro tento modul
-            File outFile = new File(pomFile.getParentFile(), "deps_verbose_" + module.getName() + ".txt");
-
-            InvocationRequest request = new DefaultInvocationRequest();
-            request.setPomFile(pomFile);
-            request.setGoals(List.of(
-                    "dependency:tree",
-                    "-Dverbose=true",
-                    "-DoutputFile=" + outFile.getAbsolutePath()
-            ));
-
-            Invoker invoker = new DefaultInvoker();
-            invoker.setMavenHome(new File("/usr/local/Cellar/maven/3.9.6/libexec"));
-            InvocationResult result = invoker.execute(request);
-            if (result.getExitCode() != 0) {
-                throw new RuntimeException("dependency:tree selhalo pro modul " + module.getName()
-                        + ". Chyba: " + result.getExecutionException());
-            }
-
-            // 3) Každý modul analyzujeme a sloučíme do allConflicts
-            List<String> modConflicts = analyzeAllVerboseConflicts(outFile);
-            allConflicts.addAll(modConflicts);
-        }
-
-        List<String> filteredConflicts = allConflicts.stream()
-                .distinct()
-                .collect(Collectors.toList());
-
-        return filteredConflicts;
-    }
-
-
-
-
-    private List<String> analyzeAllVerboseConflicts(File verboseFile) throws IOException {
-        List<String> lines = Files.readAllLines(verboseFile.toPath());
         List<String> conflicts = new ArrayList<>();
-
-        // Regex, co najde např.
-        //   (org.junit.jupiter:junit-jupiter-params:jar:5.10.2:test - omitted for conflict with 5.0.3)
-        Pattern pattern = Pattern.compile(
-                "\\(([^:]+):([^:]+):jar:([^:]+):[^)]+\\s-\\s+omitted\\s+for\\s+conflict\\s+with\\s+([^\\)]+)\\)"
-        );
-
-        for (String line : lines) {
-            Matcher matcher = pattern.matcher(line);
-            if (matcher.find()) {
-                String groupId        = matcher.group(1);
-                String artifactId     = matcher.group(2);
-                String omittedVersion = matcher.group(3);
-                String forcedVersion  = matcher.group(4).trim();
-
-                // Pokud je omittedVersion > forcedVersion => reálně zahazujeme novější
-                if (isVersionHigher(omittedVersion, forcedVersion)) {
-                    conflicts.add(String.format(
-                            "Konflikt: %s:%s -> vyšší verze %s je vyřazena, " +
-                                    "Maven ponechal nižší verzi %s.",
-                            groupId, artifactId, omittedVersion, forcedVersion
-                    ));
-                }
-            }
-        }
-
-
         return conflicts;
     }
 
 
-
-
-
-
-
-
-
-
-
-    public List<String> detectGlobalConflicts(UpdateDependencyRequest request) throws Exception {
-        ModuleDTO module = findModuleByName(request.getModuleName(), loadedProject.getModules());
-        File modulePomFile = new File(module.getPomPath());
-
-        File outputFile = new File(modulePomFile.getParentFile(), "local_deps_verbose.txt");
-
-        InvocationRequest requestVerbose = new DefaultInvocationRequest();
-        requestVerbose.setPomFile(modulePomFile);
-        requestVerbose.setGoals(List.of(
-                "dependency:tree",
-                "-Dverbose=true",
-                "-DoutputFile=" + outputFile.getAbsolutePath()
-        ));
-
-        Invoker invoker = new DefaultInvoker();
-        invoker.setMavenHome(new File("/usr/local/Cellar/maven/3.9.6/libexec"));
-        InvocationResult result = invoker.execute(requestVerbose);
-
-        if (result.getExitCode() != 0) {
-            throw new RuntimeException("Nepodařilo se získat strom závislostí (verbose) v submodulu: " + module.getName());
-        }
-
-        return analyzeVerboseTree(outputFile, request);
-    }
 
 
 
@@ -536,60 +415,6 @@ public class ProjectService {
 
         return false;
     }
-
-
-
-    private List<String> analyzeVerboseTree(File verboseFile, UpdateDependencyRequest request) throws IOException {
-        List<String> lines = Files.readAllLines(verboseFile.toPath());
-        List<String> conflicts = new ArrayList<>();
-
-        // Vzorek, který matchuje např.:
-        // (org.junit.jupiter:junit-jupiter-params:jar:5.10.2:test - omitted for conflict with 5.0.3)
-        Pattern pattern = Pattern.compile(
-                "\\(([^:]+):([^:]+):jar:([^:]+):[^)]+\\s-\\s+omitted\\s+for\\s+conflict\\s+with\\s+([^\\)]+)\\)"
-        );
-
-        // Pokud chcete ukazovat konflikty jen pro tu dependency, kterou měníte:
-        String targetDepKey = request.getGroupId() + ":" + request.getArtifactId();
-        String explicitVersion = request.getNewVersion();
-
-        for (String line : lines) {
-            // PROJDEME JEDNU ŘÁDKU:
-            Matcher matcher = pattern.matcher(line);
-
-            // NAJDEME PRVNÍ (a jediný) match v téhle řádce:
-            if (matcher.find()) {
-                System.out.println("LINE MATCH: " + line); // pro ladění
-
-                String groupId = matcher.group(1);
-                String artifactId = matcher.group(2);
-                String omittedVersion = matcher.group(3);
-                String forcedVersion = matcher.group(4).trim();
-
-                // Pokud chcete konflikty hlásit pouze pro G:A, který uživatel mění:
-                String foundDepKey = groupId + ":" + artifactId;
-                if (!foundDepKey.equals(targetDepKey)) {
-                    continue;  // Nepřidávat do conflict listu
-                }
-
-                // Porovnáme verze – pokud je omittedVersion vyšší než forcedVersion,
-                // znamená to, že Maven zahodil novější verzi a ponechal starší = konflikt.
-                if (isVersionHigher(omittedVersion, forcedVersion)) {
-                    conflicts.add(String.format(
-                            "Konflikt: Tranzitivní závislost %s vyžaduje verzi %s, " +
-                                    "ale explicitně byla nastavena nižší verze %s",
-                            targetDepKey, omittedVersion, forcedVersion
-                    ));
-                }
-            }
-        }
-
-        return conflicts;
-    }
-
-
-
-
 
 
 
@@ -626,6 +451,8 @@ public class ProjectService {
         JSONObject root = new JSONObject(response);
         JSONArray docs = root.getJSONObject("response").getJSONArray("docs");
 
+        System.out.println(docs);
+
         List<String> versions = new ArrayList<>();
         for (int i = 0; i < docs.length(); i++) {
             JSONObject doc = docs.getJSONObject(i);
@@ -639,19 +466,24 @@ public class ProjectService {
 
 
 
-    // todo UpdateModuleRequest
+
 
     public List<String> updateModuleVersion(UpdateModuleRequest request) throws Exception {
         if (projectRootPomPath == null || loadedProject == null) {
             throw new IllegalStateException("Projekt není načten nebo není dostupný strom modulů.");
         }
 
-        ModuleDTO module = findModuleByName(request.getModuleName(), loadedProject.getModules());
-        if (module == null || module.getPomPath() == null) {
-            throw new FileNotFoundException("Nepodařilo se najít pom.xml pro modul: " + request.getModuleName());
-        }
+        File modulePomFile;
 
-        File modulePomFile = new File(module.getPomPath());
+        if (request.getModuleName().equals(loadedProject.getArtifactId())) {
+            modulePomFile = new File(projectRootPomPath);
+        }else {
+            ModuleDTO module = findModuleByName(request.getModuleName(), loadedProject.getModules());
+            if (module == null || module.getPomPath() == null) {
+                throw new FileNotFoundException("Nepodařilo se najít pom.xml pro modul: " + request.getModuleName());
+            }
+            modulePomFile = new File(module.getPomPath());
+        }
 
         InvocationRequest invocationRequest = new DefaultInvocationRequest();
         invocationRequest.setPomFile(modulePomFile);
@@ -663,7 +495,12 @@ public class ProjectService {
         ));
 
         Invoker invoker = new DefaultInvoker();
-        invoker.setMavenHome(new File("/usr/local/Cellar/maven/3.9.6/libexec"));
+        String mavenHome = System.getenv("MAVEN_HOME");
+        if (mavenHome == null) {
+            throw new IllegalStateException("Systémová proměnná MAVEN_HOME není nastavena. Nastav ji na cestu ke tvému Maven adresáři.");
+        }
+        invoker.setMavenHome(new File(mavenHome));
+
         invoker.setOutputHandler(System.out::println);
         invoker.setErrorHandler(System.err::println);
 
@@ -673,8 +510,6 @@ public class ProjectService {
                     result.getExecutionException());
         }
 
-        // Volitelně můžeme spustit další cíl pro update child modulů:
-        // Například:
         InvocationRequest childUpdateRequest = new DefaultInvocationRequest();
         childUpdateRequest.setPomFile(modulePomFile);
         childUpdateRequest.setGoals(List.of("versions:update-child-modules"));
@@ -688,8 +523,7 @@ public class ProjectService {
         versionToDependenciesUpdate(request.getGroupId(),request.getModuleName(),request.getNewVersion());
 
 
-
-        List<String> conflicts = checkAllModulesConflicts();
+        List<String> conflicts = listOutdatedModuleReferences();
         return conflicts;
     }
 
@@ -715,11 +549,16 @@ public class ProjectService {
                     "-DforceVersion=true",
                     "-DgenerateBackupPoms=false",
                     "-DprocessDependencies=true",
-                    "-DprocessDependencyManagement=false"
+                    "-DprocessDependencyManagement=true"
             ));
 
             Invoker invoker = new DefaultInvoker();
-            invoker.setMavenHome(new File("/usr/local/Cellar/maven/3.9.6/libexec"));
+            String mavenHome = System.getenv("MAVEN_HOME");
+            if (mavenHome == null) {
+                throw new IllegalStateException("Systémová proměnná MAVEN_HOME není nastavena. Nastav ji na cestu ke tvému Maven adresáři.");
+            }
+            invoker.setMavenHome(new File(mavenHome));
+
             invoker.setOutputHandler(System.out::println);
             System.out.println("=====Errors=====");
             invoker.setErrorHandler(System.out::println);
@@ -749,16 +588,277 @@ public class ProjectService {
 
 
         Invoker invoker = new DefaultInvoker();
-        invoker.setMavenHome(new File("/usr/local/Cellar/maven/3.9.6/libexec"));
+        String mavenHome = System.getenv("MAVEN_HOME");
+        if (mavenHome == null) {
+            throw new IllegalStateException("Systémová proměnná MAVEN_HOME není nastavena. Nastav ji na cestu ke tvému Maven adresáři.");
+        }
+        invoker.setMavenHome(new File(mavenHome));
+
 
         InvocationResult result = invoker.execute(invocationRequest);
 
         if (result.getExitCode() != 0)
         {
-            throw new RuntimeException("Maven příkaz clean compile selhal: " + result.getExecutionException());
+            throw new RuntimeException("Maven příkaz clean install selhal: " + result.getExecutionException());
         }
 
     }
+
+
+
+
+
+
+    // ------------------------------Outdated-------------------------------------
+
+    public List<String> listOutdatedDependencies_MavenCentral() {
+
+        Map<String, String> latestCache = new HashMap<>();
+        List<String> result = new ArrayList<>();
+
+        for (ModuleDTO mod : flattenModules(loadedProject.getModules())) {
+
+            List<DependencyDTO> all = new ArrayList<>();
+            Optional.ofNullable(mod.getDependencies())        .ifPresent(all::addAll);
+            Optional.ofNullable(mod.getDependencyManagement()).ifPresent(all::addAll);
+
+            for (DependencyDTO dep : all) {
+                String ga = dep.getGroupId() + ":" + dep.getArtifactId();
+
+                String latest = latestCache.computeIfAbsent(ga, key -> {
+                    List<String> vers = getAvailableVersions(
+                            dep.getGroupId(), dep.getArtifactId());
+
+                    return vers.stream()
+                            .filter(this::isStable)
+                            .max(this::compareSemver)
+                            .orElse(null);
+                });
+
+                if (latest == null) continue;
+
+                String current = dep.getVersion();
+                if (current != null && isVersionHigher(latest, current)) {
+                    result.add(mod.getName()
+                            + ", dependency: " + ga
+                            + ", actualVersion: " + current
+                            + ", newestVersion: " + latest);
+                }
+            }
+        }
+        return result;
+    }
+
+    private boolean isStable(String v) {
+        return !v.matches("(?i).*(alpha|beta|rc|snapshot|m\\d+|milestone).*");
+    }
+
+
+    private int compareSemver(String v1, String v2) {
+        return new ComparableVersion(v1).compareTo(new ComparableVersion(v2));
+    }
+
+
+
+
+
+
+    //------------------------Outdated modules dependencies----------------------------------
+    private final List<OutdatedModuleRef> outdated = new ArrayList<>();
+
+
+    public List<String> listOutdatedModuleReferences() {
+
+        Map<String, String> currentVersions = new HashMap<>();
+        for (ModuleDTO m : flattenModules(loadedProject.getModules())) {
+            String ga = m.getGroupId() + ":" + m.getArtifactId();
+            if (!m.getVersion().isEmpty()) {
+                currentVersions.put(ga, m.getVersion());
+            }
+        }
+
+        List<String> result = new ArrayList<>();
+
+        outdated.clear();
+
+
+        for (ModuleDTO mod : flattenModules(loadedProject.getModules())) {
+
+            String parentGA = mod.getParentGroupId() + ":" + mod.getParentArtifactId();
+            String latestParentVersion = currentVersions.get(parentGA);
+            if (latestParentVersion != null) {
+                String declaredParentVersion = mod.getParentVersion();
+                if (declaredParentVersion != null &&
+                        new ComparableVersion(latestParentVersion).compareTo(
+                                new ComparableVersion(declaredParentVersion)) > 0) {
+
+                    result.add(String.format(
+                            "%s, moduleRef: %s, declaredVersion: %s, newestVersion: %s",
+                            mod.getName(), parentGA, declaredParentVersion, latestParentVersion
+                    ));
+
+                    OutdatedModuleRef ref = new OutdatedModuleRef();
+                    ref.setModule(mod.getName());
+                    ref.setGroupId(mod.getParentGroupId());
+                    ref.setArtifactId(mod.getParentArtifactId());
+                    ref.setLatest(latestParentVersion);
+                    ref.setLocation(OutdatedModuleRef.Location.PARENT);
+                    outdated.add(ref);
+                }
+            }
+
+
+            List<DependencyDTO> all = new ArrayList<>();
+            Optional.ofNullable(mod.getDependencies())        .ifPresent(all::addAll);
+            Optional.ofNullable(mod.getDependencyManagement()).ifPresent(all::addAll);
+
+            for (DependencyDTO dep : all) {
+                String ga = dep.getGroupId() + ":" + dep.getArtifactId();
+                String latest = currentVersions.get(ga);
+                if (latest == null) continue;
+
+                String declared = dep.getVersion();
+                if (declared != null &&
+                        new ComparableVersion(latest).compareTo(
+                                new ComparableVersion(declared)) > 0) {
+
+                    result.add(String.format(
+                            "%s, moduleRef: %s, declaredVersion: %s, newestVersion: %s",
+                            mod.getName(), ga, declared, latest));
+
+                    OutdatedModuleRef ref = new OutdatedModuleRef();
+                    ref.setModule(mod.getName());
+                    ref.setGroupId(dep.getGroupId());
+                    ref.setArtifactId(dep.getArtifactId());
+                    ref.setLatest(latest);
+                    ref.setLocation(
+                            mod.getDependencyManagement().contains(dep)
+                            ? OutdatedModuleRef.Location.DEP_MGMT
+                            : OutdatedModuleRef.Location.DEPENDENCIES);
+                    outdated.add(ref);
+                }
+            }
+        }
+        return result;
+    }
+
+
+
+    public List<String> fixOutdatedRefs() throws Exception {
+
+        List<String> fails = new ArrayList<>();
+        Set<String> parentModulesToPropagate = new HashSet<>();
+
+        for (OutdatedModuleRef r : outdated) {
+            try {
+                UpdateDependencyRequest req = new UpdateDependencyRequest();
+                req.setModuleName(r.getModule());
+                req.setGroupId   (r.getGroupId());
+                req.setArtifactId(r.getArtifactId());
+                req.setNewVersion(r.getLatest());
+
+
+                    if (r.getLocation() == OutdatedModuleRef.Location.DEPENDENCIES){
+                        updateDependencyVersion(req);
+                    }else if (r.getLocation() == OutdatedModuleRef.Location.DEP_MGMT) {
+                        updateDependencyManagementVersion(req);
+                    }
+                    else if (r.getLocation() == OutdatedModuleRef.Location.PARENT) {
+                    updateParentVersion(r.getModule(), r.getLatest());
+                    parentModulesToPropagate.add(r.getArtifactId());
+                }
+
+            } catch (Exception ex) {
+                fails.add(r.getModule()+" – "+ex.getMessage());
+            }
+        }
+
+        for (String parentModule : parentModulesToPropagate) {
+            try {
+                propagateParentVersionToChildren(parentModule);
+            } catch (Exception ex) {
+                fails.add(parentModule + " – (propagace parent verze selhala) " + ex.getMessage());
+            }
+        }
+
+
+        outdated.clear();
+        compileProject();
+        return fails;  // 200 - []
+    }
+
+
+    private void updateParentVersion(String moduleName, String newVersion) throws Exception {
+        ModuleDTO module = findModuleByName(moduleName, loadedProject.getModules());
+        File pomFile = new File(module.getPomPath());
+
+        InvocationRequest request = new DefaultInvocationRequest();
+        request.setPomFile(pomFile);
+        request.setGoals(List.of(
+                "versions:update-parent",
+                "-DparentVersion=" + newVersion,
+                "-DgenerateBackupPoms=false",
+                "-DallowSnapshots=true"
+        ));
+
+        System.out.println(">>> Spouštím updateParentVersion pro modul " + moduleName);
+        Invoker invoker = new DefaultInvoker();
+        String mavenHome = System.getenv("MAVEN_HOME");
+        if (mavenHome == null) {
+            throw new IllegalStateException("Systémová proměnná MAVEN_HOME není nastavena. Nastav ji na cestu ke tvému Maven adresáři.");
+        }
+        invoker.setMavenHome(new File(mavenHome));
+        invoker.setOutputHandler(System.out::println);
+        invoker.setErrorHandler(System.err::println);
+
+        InvocationResult result = invoker.execute(request);
+        System.out.println(">>> Dokončeno.");
+        if (result.getExitCode() != 0) {
+            throw new RuntimeException("Nepodařilo se aktualizovat <parent> v modulu " + moduleName);
+        }
+    }
+
+
+    public void propagateParentVersionToChildren(String parentModuleName) throws Exception {
+        ModuleDTO parent = findModuleByName(parentModuleName, loadedProject.getModules());
+        if (parent == null || parent.getPomPath() == null) {
+            throw new FileNotFoundException("Nepodařilo se najít parent modul: " + parentModuleName);
+        }
+
+        File pomFile = new File(parent.getPomPath());
+
+        InvocationRequest req = new DefaultInvocationRequest();
+        req.setPomFile(pomFile);
+        req.setGoals(List.of(
+                "versions:update-child-modules",
+                "-DgenerateBackupPoms=false"
+        ));
+
+        Invoker invoker = new DefaultInvoker();
+        String mavenHome = System.getenv("MAVEN_HOME");
+        if (mavenHome == null) {
+            throw new IllegalStateException("Systémová proměnná MAVEN_HOME není nastavena. Nastav ji na cestu ke tvému Maven adresáři.");
+        }
+        invoker.setMavenHome(new File(mavenHome));
+        invoker.setOutputHandler(System.out::println);
+        invoker.setErrorHandler(System.err::println);
+
+        InvocationResult result = invoker.execute(req);
+        if (result.getExitCode() != 0) {
+            throw new RuntimeException("Nepodařilo se aktualizovat <parent> v child modulech pro " + parentModuleName);
+        }
+    }
+
+
+
+
+
+
+
+
+
+
+
 
 }
 

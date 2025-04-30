@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: kynicond.bp.maven.versioning.ApplicationTests
+-------------------------------------------------------------------------------
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 10.75 s -- in kynicond.bp.maven.versioning.ApplicationTests
