@@ -44,3 +44,9 @@ Pak restartujte terminál nebo spusťte:
 source ~/.zshrc
 # nebo source ~/.bashrc
 ```
+Důležité
+V aplikaci se používá:
+```bash
+System.getenv("MAVEN_HOME")
+```
+Tedy: je nutné mít proměnnou MAVEN_HOME správně nastavenou.
