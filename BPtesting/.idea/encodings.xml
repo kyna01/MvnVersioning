@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="Encoding">
+    <file url="file://$PROJECT_DIR$/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/sub-moduleA/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/sub-moduleA/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/sub-moduleA/sub-moduleA2.5/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/sub-moduleA/sub-moduleA2.5/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/sub-moduleA/sub-moduleA2/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/sub-moduleA/sub-moduleA2/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/sub-moduleB/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/sub-moduleB/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/sub-moduleC/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/sub-moduleC/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/sub-moduleC/sub-moduleC2/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/sub-moduleC/sub-moduleC2/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/sub-moduleC/sub-moduleC2/sub-moduleC3/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/sub-moduleC/sub-moduleC2/sub-moduleC3/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/sub-moduleC/sub-moduleC4/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/sub-moduleC/sub-moduleC4/src/main/resources" charset="UTF-8" />
+  </component>
+</project>

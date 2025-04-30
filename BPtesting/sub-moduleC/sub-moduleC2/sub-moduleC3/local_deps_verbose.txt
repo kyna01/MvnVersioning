@@ -1,0 +1,4 @@
+org.example:sub-moduleC3:jar:1.2.3
++- kynicond:sub-moduleA:pom:1.9.6:compile
+|  \- org.apache.commons:commons-lang3:jar:3.5:compile (version managed from 3.11)
+\- org.projectlombok:lombok:jar:1.18.30:provided

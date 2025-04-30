@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>kynicond</groupId>
+        <artifactId>BPtesting</artifactId>
+        <version>1.2</version>
+    </parent>
+
+    <artifactId>sub-moduleC</artifactId>
+    <packaging>pom</packaging>
+    <modules>
+        <module>sub-moduleC2</module>
+        <module>sub-moduleC4</module>
+    </modules>
+
+    <properties>
+        <maven.compiler.source>20</maven.compiler.source>
+        <maven.compiler.target>20</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+
+    <dependencies>
+        <dependency>
+            <groupId>kynicond</groupId>
+            <artifactId>sub-moduleA</artifactId>
+            <version>1.8.2</version>   <!-- TODO Zde dat nizsi verzi-->
+            <type>pom</type>
+        </dependency>
+    </dependencies>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>kynicond</groupId>
+                <artifactId>sub-moduleA</artifactId>
+                <version>1.8.4</version>   <!-- TODO Zde dat nizsi verzi-->
+                <type>pom</type>
+            </dependency>
+            <dependency>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter-params</artifactId>
+                <version>5.6.0</version>
+                <scope>test</scope>   <!-- TODO ZDE -->
+            </dependency>
+
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-lang3</artifactId>
+                <version>3.5</version>
+            </dependency>
+        </dependencies>
+
+
+    </dependencyManagement>
+
+
+
+</project>

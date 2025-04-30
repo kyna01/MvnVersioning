@@ -10,7 +10,13 @@ public class ModuleDTO {
     private String groupId;
     private String artifactId;
     private String version;
+
+    private String parentGroupId;
+    private String parentArtifactId;
+    private String parentVersion;
+
+    private String pomPath;
     private List<ModuleDTO> submodules;
     private List<DependencyDTO> dependencies;
-    private String pomPath;
+    private List<DependencyDTO> dependencyManagement;
 }

@@ -154,7 +154,6 @@
 						<exclude>
 							<groupId>org.projectlombok</groupId>
 							<artifactId>lombok</artifactId>
-							<version>1.18.30</version>
 						</exclude>
 					</excludes>
 				</configuration>
@@ -163,7 +162,7 @@
 			<plugin>
 				<groupId>org.codehaus.mojo</groupId>
 				<artifactId>versions-maven-plugin</artifactId>
-				<version>2.16.2</version>
+				<version>2.18.0</version>
 			</plugin>
 
 

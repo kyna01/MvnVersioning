@@ -1,0 +1,10 @@
+/Users/ondrejkynicky/Desktop/BP/MvnVersioning/src/main/java/kynicond/bp/maven/versioning/Application.java
+/Users/ondrejkynicky/Desktop/BP/MvnVersioning/src/main/java/kynicond/bp/maven/versioning/controller/ProjectController.java
+/Users/ondrejkynicky/Desktop/BP/MvnVersioning/src/main/java/kynicond/bp/maven/versioning/entity/dto/DependencyDTO.java
+/Users/ondrejkynicky/Desktop/BP/MvnVersioning/src/main/java/kynicond/bp/maven/versioning/entity/dto/LoadProjectRequest.java
+/Users/ondrejkynicky/Desktop/BP/MvnVersioning/src/main/java/kynicond/bp/maven/versioning/entity/dto/ModuleDTO.java
+/Users/ondrejkynicky/Desktop/BP/MvnVersioning/src/main/java/kynicond/bp/maven/versioning/entity/dto/OutdatedModuleRef.java
+/Users/ondrejkynicky/Desktop/BP/MvnVersioning/src/main/java/kynicond/bp/maven/versioning/entity/dto/ProjectDTO.java
+/Users/ondrejkynicky/Desktop/BP/MvnVersioning/src/main/java/kynicond/bp/maven/versioning/entity/dto/UpdateDependencyRequest.java
+/Users/ondrejkynicky/Desktop/BP/MvnVersioning/src/main/java/kynicond/bp/maven/versioning/entity/dto/UpdateModuleRequest.java
+/Users/ondrejkynicky/Desktop/BP/MvnVersioning/src/main/java/kynicond/bp/maven/versioning/service/ProjectService.java

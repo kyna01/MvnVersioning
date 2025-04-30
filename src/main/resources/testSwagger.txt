@@ -1,0 +1,35 @@
+{
+  "moduleName": "sub-moduleA",
+  "groupId": "org.junit.jupiter",
+  "artifactId": "junit-jupiter-params",
+  "newVersion": "5.10.2"
+}
+{
+  "pomPath": "/Users/ondrejkynicky/Desktop/BP/BPtesting/pom.xml"
+}
+
+
+{
+  "groupId": "kynicond",
+  "moduleName": "sub-moduleA",
+  "newVersion": "1.8"
+}
+
+
+{
+  "moduleName": "sub-moduleA",
+  "groupId": "org.apache.commons",
+  "artifactId": "commons-lang3",
+  "newVersion": "3.11.0"
+}
+
+
+
+org.junit.jupiter
+junit-jupiter-params
+
+
+
+org.apache.commons
+
+commons-lang3
